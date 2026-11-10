@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dudung 설계 문서</title>
+<style>
+  :root {
+    --bg: #ffffff; --ink: #1f1f1d; --muted: #6b6a66; --line: #e4e2dc; --axis: #b9b6ac;
+    --accent: #2f6fde; --accent-soft: rgba(47,111,222,.12); --tint: #f2f1ed; --code: #f6f5f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1b1a; --ink: #ecebe7; --muted: #a3a19a; --line: #34332f; --axis: #6f6c64;
+      --accent: #6b9cf0; --accent-soft: rgba(107,156,240,.16); --tint: #252522; --code: #242421;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 48px 16px 96px; }
+  h1 { font-size: 30px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 32px; }
+  h2 { font-size: 21px; margin: 56px 0 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 28px 0 8px; }
+  p { margin: 8px 0; }
+  ul, ol { padding-left: 22px; margin: 8px 0; }
+  li { margin: 4px 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px;
+    background: var(--code); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--code); padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+  pre code { background: none; padding: 0; }
+  .table { overflow-x: auto; margin: 12px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: 13px; }
+  nav { background: var(--tint); border-radius: 8px; padding: 14px 18px; font-size: 14px; }
+  nav ol { margin: 0; columns: 2; }
+  nav a { color: var(--ink); text-decoration: none; }
+  nav a:hover { color: var(--accent); }
+  figure { margin: 16px 0; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .box { fill: none; stroke: var(--axis); stroke-width: 1.25; }
+  .box-acc { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
+  .box-tint { fill: var(--tint); stroke: var(--axis); stroke-width: 1.25; }
+  .box-dash { fill: none; stroke: var(--axis); stroke-width: 1.25; stroke-dasharray: 4 4; }
+  .edges path { fill: none; stroke: var(--axis); stroke-width: 1.25; }
+  .edges path.dash { stroke-dasharray: 4 4; }
+  .media { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; }
+  .mk { fill: var(--axis); } .mk-acc { fill: var(--accent); }
+  .t { fill: var(--ink); font-size: 13px; } .tb { fill: var(--ink); font-size: 13px; font-weight: 600; }
+  .ts { fill: var(--muted); font-size: 11.5px; } .tsi { fill: var(--ink); font-size: 11.5px; }
+  .title { fill: var(--ink); font-size: 15px; font-weight: 600; }
+  svg text { font-family: inherit; }
+  @media (max-width: 600px) { nav ol { columns: 1; } h1 { font-size: 24px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Dudung 설계 문서</h1>
+<div class="meta">2026-11-10 기준 · 실시간 라이브 방송 플랫폼</div>
+
+<nav>
+  <ol>
+    <li><a href="#overview">개요</a></li>
+    <li><a href="#architecture">아키텍처</a></li>
+    <li><a href="#schema">도메인 모델과 DB 스키마</a></li>
+    <li><a href="#state">방송 상태와 동기화</a></li>
+    <li><a href="#auth">인증과 인가</a></li>
+    <li><a href="#api">API 목록</a></li>
+    <li><a href="#pages">화면 구성</a></li>
+    <li><a href="#flows">핵심 흐름</a></li>
+    <li><a href="#client">클라이언트 미디어 처리</a></li>
+    <li><a href="#ops">Redis와 운영</a></li>
+    <li><a href="#test">테스트 전략</a></li>
+    <li><a href="#readme">README와 시연 영상</a></li>
+  </ol>
+</nav>
+
+<h2 id="overview">개요</h2>
+<p>Dudung은 PC 화면공유와 모바일 카메라로 송출하고 비로그인으로도 시청하는 라이브 방송 서비스다. 마감은 2026-11-19 23:59다. 평가 항목에 없는 것(k8s 등)은 범위에서 뺐고, 월 0원으로 운영한다.</p>
+<div class="table"><table>
+  <tr><th>영역</th><th>결정</th></tr>
+  <tr><td>앱</td><td>Next.js 단일 앱, stateless. 쓰기 작업은 REST Route Handler, 실시간 알림은 SSE</td></tr>
+  <tr><td>인증</td><td><code>jose</code>로 JWT 직접 구현, access + refresh rotation(30초 유예), httpOnly 쿠키</td></tr>
+  <tr><td>미디어</td><td>MediaMTX 직접 운영(WebRTC). 송출은 WHIP, 시청은 WHEP. TURN 없이 TCP 폴백(ICE-TCP)</td></tr>
+  <tr><td>녹화</td><td>MediaMTX가 서버에서 녹화(fMP4) → 워커가 MP4 하나로 합침 → Cloudflare R2</td></tr>
+  <tr><td>데이터</td><td>PostgreSQL + Drizzle, Redis (토큰·락·rate limit·큐·pub/sub)</td></tr>
+  <tr><td>배포</td><td>Oracle Cloud Always Free ARM 서버 1대(1 OCPU / 8GB, 오사카), Docker Compose + Caddy, DuckDNS 도메인</td></tr>
+  <tr><td>품질</td><td>zod, problem+json 에러, pino 로깅, Vitest + testcontainers, Playwright</td></tr>
+  <tr><td>UI</td><td>Tailwind + shadcn/ui</td></tr>
+  <tr><td>비용</td><td>월 0원. R2는 카드를 등록하고 무료 한도(10GB) 안에서만 쓴다</td></tr>
+</table></div>
+<p><b>방송 모델</b>: 사용자 한 명이 채널 하나다. 채널 아래에 방송을 READY로 등록하고 시작·종료한다. 방송 하나는 송출 한 번이고, 종료된 방송은 다시 켤 수 없다. 다시 방송하려면 새 방송을 등록한다.</p>
+
+<h2 id="architecture">아키텍처</h2>
+<figure>
+<svg viewBox="0 0 760 440" role="img" aria-label="영상은 브라우저와 MediaMTX가 직접 주고받고, 앱은 API와 인증, 알림을 맡는다">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="mk" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="mk-acc" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+  <text class="title" x="24" y="32">영상은 브라우저와 MediaMTX가 직접 주고받고, 앱은 API·인증·알림을 맡는다</text>
+  <g class="edges">
+    <path d="M164 108H220" marker-end="url(#a)"/>
+    <path d="M370 100H420" marker-end="url(#a)"/>
+    <path d="M295 144V250" marker-end="url(#a)"/>
+    <path d="M370 286H395V128H420" marker-start="url(#a)" marker-end="url(#a)"/>
+    <path d="M570 108H600" marker-end="url(#a)"/>
+    <path d="M570 262H668V216" marker-end="url(#a)"/>
+    <path d="M295 322V360" marker-end="url(#a)"/>
+    <path d="M370 382H495V322" marker-end="url(#a)"/>
+    <path d="M570 300H668V340" marker-end="url(#a)"/>
+    <path d="M40 144V424H668V396" marker-end="url(#a)"/>
+  </g>
+  <path class="media" d="M94 144V286H220" marker-start="url(#am)" marker-end="url(#am)"/>
+  <rect class="box" x="24" y="72" width="140" height="72" rx="8"/>
+  <text class="tb" x="94" y="104" text-anchor="middle">브라우저</text>
+  <text class="ts" x="94" y="124" text-anchor="middle">송출자 · 시청자</text>
+  <rect class="box" x="220" y="72" width="150" height="72" rx="8"/>
+  <text class="tb" x="295" y="104" text-anchor="middle">Caddy</text>
+  <text class="ts" x="295" y="124" text-anchor="middle">HTTPS · 라우팅</text>
+  <rect class="box" x="420" y="72" width="150" height="72" rx="8"/>
+  <text class="tb" x="495" y="104" text-anchor="middle">app (Next.js)</text>
+  <text class="ts" x="495" y="124" text-anchor="middle">API · SSE · 인증 훅</text>
+  <rect class="box-acc" x="220" y="250" width="150" height="72" rx="8"/>
+  <text class="tb" x="295" y="282" text-anchor="middle">MediaMTX</text>
+  <text class="ts" x="295" y="302" text-anchor="middle">WHIP · WHEP · 녹화</text>
+  <rect class="box" x="420" y="250" width="150" height="72" rx="8"/>
+  <text class="tb" x="495" y="282" text-anchor="middle">worker</text>
+  <text class="ts" x="495" y="302" text-anchor="middle">BullMQ · ffmpeg</text>
+  <rect class="box-tint" x="220" y="360" width="150" height="44" rx="8"/>
+  <text class="t" x="295" y="387" text-anchor="middle">녹화 조각 (디스크)</text>
+  <rect class="box-tint" x="600" y="56" width="136" height="160" rx="8"/>
+  <text class="tb" x="668" y="78" text-anchor="middle">데이터</text>
+  <rect class="box" x="616" y="88" width="104" height="44" rx="8"/>
+  <text class="t" x="668" y="114" text-anchor="middle">PostgreSQL</text>
+  <rect class="box" x="616" y="148" width="104" height="44" rx="8"/>
+  <text class="t" x="668" y="174" text-anchor="middle">Redis</text>
+  <rect class="box-dash" x="600" y="340" width="136" height="56" rx="8"/>
+  <text class="tb" x="668" y="364" text-anchor="middle">Cloudflare R2</text>
+  <text class="ts" x="668" y="382" text-anchor="middle">녹화 MP4</text>
+  <text class="ts" x="192" y="100" text-anchor="middle">HTTPS</text>
+  <text class="ts" x="303" y="206">WHIP · WHEP</text>
+  <text class="ts" x="102" y="224">미디어 UDP·TCP 8189</text>
+  <text class="ts" x="401" y="196">인증·상태 훅</text>
+  <text class="ts" x="401" y="212">제어 API</text>
+  <text class="ts" x="590" y="254">DB · 큐</text>
+  <text class="ts" x="590" y="292">업로드</text>
+  <text class="ts" x="420" y="374">합치기</text>
+  <text class="ts" x="380" y="418" text-anchor="middle">다시보기 재생 (presigned URL)</text>
+</svg>
+<figcaption>구성요소와 통신 경로 · 서버 컨테이너 6개(Caddy, app, worker, MediaMTX, PostgreSQL, Redis) + 외부 R2</figcaption>
+</figure>
+<p>앱(app·worker)은 상태를 갖지 않는다. 세션, 락, 알림 전파는 모두 Redis가 맡는다. 영상 패킷은 Caddy와 앱을 거치지 않고 브라우저와 MediaMTX 사이를 직접 오간다. Caddy를 거치는 것은 연결을 맺는 HTTP 요청(WHIP/WHEP)뿐이다.</p>
+
+<h3>서버 포트</h3>
+<div class="table"><table>
+  <tr><th>포트</th><th>프로토콜</th><th>용도</th></tr>
+  <tr><td>80, 443</td><td>TCP</td><td>Caddy (HTTP→HTTPS 리다이렉트, 앱, <code>/media/*</code> → MediaMTX WHIP/WHEP)</td></tr>
+  <tr><td>8189</td><td>UDP</td><td>WebRTC 미디어</td></tr>
+  <tr><td>8189</td><td>TCP</td><td>WebRTC TCP 폴백 (ICE-TCP)</td></tr>
+  <tr><td>8889</td><td>TCP, 127.0.0.1만</td><td>MediaMTX WebRTC HTTP. Caddy만 접근</td></tr>
+  <tr><td>9997</td><td>TCP, 127.0.0.1만</td><td>MediaMTX Control API. 앱·워커만 접근</td></tr>
+  <tr><td>3000</td><td>TCP, 127.0.0.1만</td><td>app. Caddy와 MediaMTX 훅만 접근</td></tr>
+</table></div>
+<ul>
+  <li>도메인: <code>dudung.duckdns.org</code> 하나. Caddy가 Let's Encrypt 인증서를 자동으로 받는다. MediaMTX의 WHIP/WHEP는 같은 도메인의 <code>/media/</code> 경로로 프록시해서, CORS 설정과 인증서를 따로 두지 않는다.</li>
+  <li>MediaMTX 이미지: <code>bluenviron/mediamtx:1.21.3-ffmpeg</code>(arm64 지원 확인). 훅에서 셸 명령을 쓰려고 ffmpeg 변형을 쓴다.</li>
+  <li>네트워크: Caddy와 MediaMTX는 <code>network_mode: host</code>. app은 <code>127.0.0.1:3000</code>으로만 포트를 연다. Oracle은 사설 IP에 공인 IP가 1:1 NAT로 붙어 있어서, MediaMTX 설정 <code>webrtcAdditionalHosts</code>에 공인 IP를 적는다.</li>
+  <li>Oracle 방화벽: VCN 보안 목록과 서버 iptables <b>둘 다</b>에서 80, 443, 8189(UDP·TCP)를 연다.</li>
+  <li>UDP와 TCP 8189가 모두 막히고 443만 열린 엄격한 망에서는 시청이 안 될 수 있다. README 지원 환경에 적는다. 시간이 남으면 Cloudflare TURN(월 1,000GB 무료, 443 지원)을 붙인다. 서버가 Cloudflare API로 단기 TURN 인증 정보를 발급하고, 브라우저가 <code>RTCPeerConnection</code>의 <code>iceServers</code>에 넣으면 된다.</li>
+  <li>CPU: 1 OCPU를 모두가 나눠 쓴다. 워커의 ffmpeg는 <code>nice</code>로 우선순위를 낮추고 한 번에 하나만 돌린다. 컨테이너마다 <code>mem_limit</code>를 둔다.</li>
+  <li>비밀값: 저장소에는 <code>.env.example</code>만 커밋하고, 실제 값은 서버 <code>.env</code>와 GitHub Secrets에만 둔다.</li>
+</ul>
+
+<h2 id="schema">도메인 모델과 DB 스키마</h2>
+<p>테이블은 6개다. 채널은 사용자 자체라서 테이블을 따로 두지 않는다. ID는 전부 UUIDv7, 시각은 전부 <code>timestamptz</code>(UTC 저장)다.</p>
+<pre><code>CREATE TABLE users (
+  id            uuid PRIMARY KEY,
+  email         text NOT NULL UNIQUE,
+  password_hash text NOT NULL,              -- argon2id
+  nickname      text NOT NULL UNIQUE,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TYPE broadcast_status AS ENUM ('READY', 'LIVE', 'ENDED');
+CREATE TYPE broadcast_source AS ENUM ('SCREEN', 'CAMERA');
+
+CREATE TABLE broadcasts (
+  id                  uuid PRIMARY KEY,
+  owner_id            uuid NOT NULL REFERENCES users(id),   -- = 채널
+  title               text NOT NULL,          -- 1~100자
+  description         text,
+  status              broadcast_status NOT NULL DEFAULT 'READY',
+  source              broadcast_source,       -- 송출 시작 시 기록
+  path_name           text NOT NULL UNIQUE,   -- MediaMTX 경로 'live/{id}'
+  started_at          timestamptz,
+  first_published_at  timestamptz,            -- 첫 송출 시각. 비어 있으면 송출 실패로 보고 READY 복귀
+  ended_at            timestamptz,
+  end_reason          text,                   -- OWNER | DISCONNECTED | DELETED | RECONCILED
+  deleted_at          timestamptz,            -- soft delete (녹화·후원 내역 보존)
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now()
+);
+-- 사용자당 LIVE 방송 1개
+CREATE UNIQUE INDEX one_live_per_owner ON broadcasts(owner_id) WHERE status = 'LIVE';
+-- 공개 목록: READY는 노출하지 않는다
+CREATE INDEX broadcasts_public ON broadcasts(status, created_at DESC)
+  WHERE deleted_at IS NULL AND status &lt;&gt; 'READY';
+CREATE INDEX broadcasts_by_owner ON broadcasts(owner_id, created_at DESC) WHERE deleted_at IS NULL;
+
+CREATE TYPE recording_status AS ENUM ('RECORDING', 'PROCESSING', 'READY', 'FAILED');
+
+CREATE TABLE recordings (
+  id            uuid PRIMARY KEY,
+  broadcast_id  uuid NOT NULL UNIQUE REFERENCES broadcasts(id),
+  status        recording_status NOT NULL DEFAULT 'RECORDING',
+  s3_key        text,                     -- R2: recordings/{broadcastId}.mp4
+  size_bytes    bigint,                   -- 용량 정책 계산용
+  duration_sec  integer,                  -- 최대 3600
+  error         text,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE comments (
+  id            uuid PRIMARY KEY,
+  broadcast_id  uuid NOT NULL REFERENCES broadcasts(id),
+  author_id     uuid NOT NULL REFERENCES users(id),
+  body          text NOT NULL,            -- 1~300자
+  deleted_at    timestamptz,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX comments_by_broadcast ON comments(broadcast_id, id DESC);
+
+CREATE TYPE donation_status AS ENUM ('PENDING', 'DONE', 'FAILED');
+
+CREATE TABLE donations (
+  id            uuid PRIMARY KEY,
+  order_id      text NOT NULL UNIQUE,     -- 서버가 발급, 토스에 전달
+  broadcast_id  uuid NOT NULL REFERENCES broadcasts(id),
+  donor_id      uuid NOT NULL REFERENCES users(id),
+  recipient_id  uuid NOT NULL REFERENCES users(id),  -- 방송 owner, 서버가 채움
+  amount        integer NOT NULL CHECK (amount BETWEEN 1000 AND 100000),
+  message       text,
+  status        donation_status NOT NULL DEFAULT 'PENDING',
+  payment_key   text UNIQUE,              -- 승인 후 기록, 중복 적립 방지
+  approved_at   timestamptz,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX donations_by_broadcast ON donations(broadcast_id) WHERE status = 'DONE';
+
+CREATE TABLE webhook_events (
+  source       text NOT NULL,             -- toss
+  event_id     text NOT NULL,
+  received_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (source, event_id)
+);</code></pre>
+<ul>
+  <li>방송 삭제는 soft delete다. 녹화와 후원 내역이 방송을 참조하므로 행을 지우지 않는다. 삭제된 방송의 녹화는 목록과 상세에서 숨긴다.</li>
+  <li>녹화는 방송당 1개다. 송출자가 재접속해도 같은 MediaMTX 경로에 조각이 이어서 쌓이고, 종료 후 하나로 합친다.</li>
+  <li>웹훅 중복 제거(토스): <code>webhook_events</code> insert를 상태 변경과 <b>같은 트랜잭션</b>에서 한다. 처리가 실패하면 함께 롤백돼서, 재전송된 이벤트가 중복으로 버려지지 않는다. Redis <code>SET NX</code>는 동시 처리를 막는 30초 락으로만 쓴다.</li>
+  <li>MediaMTX 훅은 내부 호출이고, 모든 상태 전환이 조건부 업데이트라 같은 훅이 두 번 와도 결과가 같다. 그래서 별도 중복 제거 기록을 두지 않는다.</li>
+  <li>후원 합계는 <code>SUM(amount) WHERE status='DONE'</code> 쿼리로 계산한다. 별도 합계 컬럼을 두지 않아 정합성 문제가 없다.</li>
+  <li>후원은 LIVE 방송에만 가능하다. 30분 넘게 결제되지 않은 PENDING 주문은 정리 작업이 FAILED로 바꾼다.</li>
+</ul>
+
+<h2 id="state">방송 상태와 동기화</h2>
+<figure>
+<svg viewBox="0 0 760 320" role="img" aria-label="방송 상태는 READY, LIVE, ENDED로 바뀌고, 송출 없이 끝난 경우만 READY로 돌아간다">
+  <defs>
+    <marker id="s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="mk" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+  <text class="title" x="24" y="32">READY → LIVE → ENDED, 송출 없이 끝난 경우만 READY로 돌아간다</text>
+  <g class="edges">
+    <path d="M164 110H254" marker-end="url(#s)"/>
+    <path d="M394 110H596" marker-end="url(#s)"/>
+    <path d="M94 138V260H300" marker-end="url(#s)"/>
+    <path d="M666 138V260H480" marker-end="url(#s)"/>
+    <path class="dash" d="M300 138V176H140V138" marker-end="url(#s)"/>
+  </g>
+  <rect class="box" x="24" y="82" width="140" height="56" rx="8"/>
+  <text class="tb" x="94" y="106" text-anchor="middle">READY</text>
+  <text class="ts" x="94" y="124" text-anchor="middle">등록 직후</text>
+  <rect class="box-acc" x="254" y="82" width="140" height="56" rx="8"/>
+  <text class="tb" x="324" y="106" text-anchor="middle">LIVE</text>
+  <text class="ts" x="324" y="124" text-anchor="middle">송출 중 · 녹화 중</text>
+  <rect class="box" x="596" y="82" width="140" height="56" rx="8"/>
+  <text class="tb" x="666" y="106" text-anchor="middle">ENDED</text>
+  <text class="ts" x="666" y="124" text-anchor="middle">재시작 불가</text>
+  <rect class="box-dash" x="300" y="236" width="180" height="48" rx="8"/>
+  <text class="t" x="390" y="264" text-anchor="middle">삭제됨 (soft delete)</text>
+  <text class="ts" x="209" y="100" text-anchor="middle">POST /start</text>
+  <text class="ts" x="220" y="170" text-anchor="middle">2분 안에 송출 없음</text>
+  <text class="ts" x="495" y="100" text-anchor="middle">end_reason</text>
+  <text class="tsi" x="408" y="134">OWNER · 종료 버튼</text>
+  <text class="tsi" x="408" y="152">DISCONNECTED · 30초 미복귀</text>
+  <text class="tsi" x="408" y="170">DELETED · LIVE 중 삭제</text>
+  <text class="tsi" x="408" y="188">RECONCILED · 정합성 정리</text>
+  <text class="ts" x="102" y="214">DELETE</text>
+  <text class="ts" x="658" y="214" text-anchor="end">DELETE</text>
+</svg>
+<figcaption>방송 상태 전환 · 3개 상태, 종료 사유 4가지, 예외 복귀 1가지</figcaption>
+</figure>
+<p>DB가 상태의 기준이다. MediaMTX는 송출·시청 요청마다 앱에 허용 여부를 묻고, 앱은 DB가 LIVE일 때만 허용한다. LIVE 중 삭제는 ENDED(<code>DELETED</code>)를 거쳐 soft delete된다.</p>
+<ul>
+  <li><b>모든 전환은 조건부 업데이트</b>다. <code>UPDATE broadcasts SET status='ENDED' ... WHERE id=? AND status='LIVE'</code>. 영향 행이 0이면 이미 다른 경로로 전환된 것이므로 아무 일도 하지 않는다. 종료 버튼과 훅이 동시에 와도 한 번만 처리된다.</li>
+  <li><b>사용자당 LIVE 1개</b>는 부분 UNIQUE 인덱스가 보장한다. 두 번째 <code>start</code>는 409.</li>
+  <li><b>송출 감지</b>: 송출이 붙으면 MediaMTX <code>runOnReady</code> 훅이 <code>/internal/media/ready</code>를 부른다. 앱은 <code>first_published_at</code>을 처음일 때만 기록하고, 녹화 행을 RECORDING으로 만들고, 대기 중인 종료 작업을 취소한다.</li>
+  <li><b>끊김 감지</b>: 송출이 끊기면 <code>runOnNotReady</code> 훅이 <code>/internal/media/not-ready</code>를 부른다. 앱은 <code>end-if-absent</code> 지연 작업(30초)을 등록한다. 작업이 실행될 때 Control API로 확인해서 송출자가 없으면 ENDED(<code>DISCONNECTED</code>)로 바꾼다.</li>
+  <li><b>송출 없이 끝남</b>: <code>start</code> 때 <code>start-timeout</code> 지연 작업(2분)을 등록한다. 2분이 지나도 <code>first_published_at</code>이 비어 있으면 <code>UPDATE ... SET status='READY', started_at=NULL, source=NULL WHERE id=? AND status='LIVE' AND first_published_at IS NULL</code>로 되돌린다. 같은 방송으로 다시 시작할 수 있다. "한 방향" 원칙의 유일한 예외다.</li>
+  <li><b>종료 순서</b>: DB를 ENDED로 바꾼 뒤 Control API로 송출 세션을 끊는다(kick). 끊기 전에 재연결을 시도해도 인증 훅이 거절하므로, 끊기가 실패해도 정합성 정리가 1분 안에 다시 끊는다.</li>
+  <li><b>정합성 정리(reconcile)</b>: 1분마다 워커가 <code>pg_advisory_lock</code>을 잡고 DB의 LIVE 목록과 Control API의 송출 중인 경로를 비교한다. DB는 LIVE인데 송출자가 없고 시작한 지 2분이 지났으면, 위 규칙대로 ENDED(<code>RECONCILED</code>) 또는 READY 복귀. MediaMTX에서는 송출 중인데 DB가 LIVE가 아니면 끊는다.</li>
+  <li><b>녹화와 상태는 별개</b>다. 방송이 ENDED가 되면 워커가 녹화를 합치고 올린 뒤 녹화가 READY가 된다.</li>
+  <li><b>내부 훅 보호</b>: <code>/internal/*</code>는 Caddy가 외부 요청에 404를 돌려주고, 앱도 <code>X-Internal-Secret</code> 헤더를 확인한다.</li>
+</ul>
+
+<h2 id="auth">인증과 인가</h2>
+<p>권한 검증은 전부 서버의 서비스 계층에서 한다. middleware는 쿠키 파싱과 리다이렉트만 하고, 권한 판단은 하지 않는다.</p>
+<h3>토큰</h3>
+<div class="table"><table>
+  <tr><th>토큰</th><th>저장</th><th>수명</th><th>내용</th></tr>
+  <tr><td>Access</td><td>httpOnly 쿠키 <code>at</code>, Path=/</td><td>10분</td><td><code>sub</code>, <code>jti</code>, <code>exp</code>, ES256 서명</td></tr>
+  <tr><td>Refresh</td><td>httpOnly 쿠키 <code>rt</code>, Path=/api/auth</td><td>14일</td><td><code>sub</code>, <code>jti</code>, <code>family</code>. Redis에 <code>auth:rt:{jti}</code> 저장</td></tr>
+  <tr><td>송출 토큰</td><td>응답 바디, 클라이언트 메모리</td><td>15분</td><td>무작위 문자열. Redis <code>media:pub:{token}</code> → <code>{broadcastId, userId}</code>. WHIP 요청 URL의 <code>?token=</code>으로 보낸다</td></tr>
+  <tr><td>시청</td><td>없음</td><td>-</td><td>인증 훅이 방송 LIVE 여부만 확인</td></tr>
+</table></div>
+<ul>
+  <li>쿠키 공통: <code>HttpOnly; Secure; SameSite=Lax</code>.</li>
+  <li>Refresh rotation: 사용하면 새로 발급하고, 기존 <code>jti</code>는 30초 동안 "교체됨(새 토큰 참조)"으로 남긴다. 30초 안에 같은 <code>jti</code>가 다시 오면 같은 새 토큰을 돌려준다(탭 2개가 동시에 refresh하는 경우). 30초가 지난 뒤 다시 오면 탈취로 보고 <code>auth:family:{family}</code> 전체를 폐기한다.</li>
+  <li>클라이언트 refresh: refresh 쿠키가 <code>Path=/api/auth</code>라서 middleware는 페이지 이동 중에 재발급할 수 없다. 클라이언트 AuthProvider가 <code>/api/me</code> 401을 받으면 <code>/api/auth/refresh</code> → <code>router.refresh()</code> 순으로 처리하고, 탭 간 중복 요청은 <code>navigator.locks</code>로 하나로 묶는다.</li>
+  <li>로그아웃: refresh <code>jti</code> 삭제, access <code>jti</code>를 <code>auth:bl:{jti}</code>(TTL = 남은 수명)에 등록, 쿠키 삭제.</li>
+  <li>서명키: ES256 키쌍을 환경변수로 주입한다.</li>
+  <li>CSRF: 쓰기 요청(POST·PATCH·DELETE)은 <code>Origin</code> 헤더가 앱 도메인과 같을 때만 통과한다. 외부 서버가 호출하는 <code>/api/webhooks/*</code>는 제외하고 조회 API로 검증한다.</li>
+  <li>미디어 인증: MediaMTX <code>authMethod: http</code>. 송출(<code>publish</code>)은 토큰이 유효하고, 토큰의 사용자가 방송 소유자이고, 방송이 LIVE일 때만 허용한다. 시청(<code>read</code>)은 방송이 LIVE일 때만 허용한다. 나머지 동작은 거절한다.</li>
+  <li>테스트 계정: 고정 계정 <code>streamer1~3@dudung.test</code>, <code>viewer1~2@dudung.test</code>. 비밀번호는 README에 적고, 로그인 화면에 계정별 원클릭 버튼을 둔다. 로그인할 수 없는 <code>demo</code> 계정 소유의 종료된 방송과 녹화를 seed해서, 심사자가 지울 수 없는 "다른 사용자 방송"과 다시보기 예시로 쓴다.</li>
+</ul>
+<h3>권한 매트릭스</h3>
+<div class="table"><table>
+  <tr><th>기능</th><th>비로그인</th><th>다른 사용자</th><th>소유자</th></tr>
+  <tr><td>방송 목록·채널 페이지</td><td>허용</td><td>허용</td><td>허용</td></tr>
+  <tr><td>방송 상세·시청</td><td>허용 (READY는 대기 화면)</td><td>허용 (READY는 대기 화면)</td><td>허용</td></tr>
+  <tr><td>방송 등록</td><td>401</td><td>허용</td><td>허용</td></tr>
+  <tr><td>내 방송 목록</td><td>401</td><td>본인 것만</td><td>본인 것만</td></tr>
+  <tr><td>방송 수정·삭제</td><td>401</td><td>403</td><td>허용</td></tr>
+  <tr><td>방송 시작·종료·송출 토큰 재발급</td><td>401</td><td>403</td><td>허용</td></tr>
+  <tr><td>MediaMTX 송출 (WHIP)</td><td>거절</td><td>거절</td><td>허용 (유효 토큰 + LIVE)</td></tr>
+  <tr><td>녹화 목록·재생</td><td>허용</td><td>허용</td><td>허용</td></tr>
+  <tr><td>댓글 조회</td><td>허용</td><td>허용</td><td>허용</td></tr>
+  <tr><td>댓글 작성</td><td>401</td><td>허용</td><td>허용</td></tr>
+  <tr><td>댓글 수정·삭제</td><td>401</td><td>작성자만</td><td>작성자만</td></tr>
+  <tr><td>후원 요청</td><td>401</td><td>허용 (LIVE만)</td><td>403 (자기 방송 후원 불가)</td></tr>
+  <tr><td>후원 내역·합계 조회</td><td>허용</td><td>허용</td><td>허용</td></tr>
+</table></div>
+<p>이 표가 통합 테스트의 케이스 목록이 되고, README에도 그대로 들어간다. UI는 권한 없는 버튼을 숨기므로 심사자가 403을 화면에서 직접 볼 수 없다. 그래서 표의 각 칸을 비로그인·소유자·다른 사용자 순으로 요청해 기대 코드와 비교하는 <code>scripts/authz-check.sh</code>(curl)를 함께 제공한다.</p>
+
+<h2 id="api">API 목록</h2>
+<p>공개 API는 <code>/api</code> 아래 REST로 두고, 에러는 <code>application/problem+json</code>에 <code>code</code> 필드(예: <code>BROADCAST_NOT_OWNER</code>)를 붙여 반환한다. 목록 API는 cursor 페이지네이션(<code>?cursor=&amp;limit=</code>)이다.</p>
+<div class="table"><table>
+  <tr><th>메서드</th><th>경로</th><th>권한</th><th>설명</th></tr>
+  <tr><td>POST</td><td>/api/auth/signup</td><td>공개</td><td>회원가입 후 바로 로그인 쿠키 발급 (rate limit)</td></tr>
+  <tr><td>POST</td><td>/api/auth/login</td><td>공개</td><td>로그인 (rate limit)</td></tr>
+  <tr><td>POST</td><td>/api/auth/test-login</td><td>공개</td><td><code>{ account: 'streamer1' | … | 'viewer2' }</code> 고정 계정 원클릭 로그인. <code>TEST_LOGIN_ENABLED</code>일 때만</td></tr>
+  <tr><td>POST</td><td>/api/auth/refresh</td><td>refresh 쿠키</td><td>access 재발급 + rotation</td></tr>
+  <tr><td>POST</td><td>/api/auth/logout</td><td>로그인</td><td>토큰 폐기, 쿠키 삭제</td></tr>
+  <tr><td>GET</td><td>/api/me</td><td>로그인</td><td>내 정보</td></tr>
+  <tr><td>GET</td><td>/api/me/broadcasts</td><td>로그인</td><td>내 방송 목록 (READY 포함). 송출 시작 진입점</td></tr>
+  <tr><td>GET</td><td>/api/channels/:userId</td><td>공개</td><td>채널 정보 + 지금 LIVE인 방송 + 지난 방송(ENDED) 목록</td></tr>
+  <tr><td>GET</td><td>/api/broadcasts</td><td>공개</td><td>목록 (LIVE·ENDED만). <code>?status=LIVE</code> 필터, LIVE 우선 정렬</td></tr>
+  <tr><td>POST</td><td>/api/broadcasts</td><td>로그인</td><td>방송 등록 (READY)</td></tr>
+  <tr><td>GET</td><td>/api/broadcasts/:id</td><td>공개</td><td>상세 + 시청자 수 + 후원 합계. READY는 소유자가 아니면 대기 상태 정보만</td></tr>
+  <tr><td>PATCH</td><td>/api/broadcasts/:id</td><td>소유자</td><td>제목·설명 수정 (모든 상태)</td></tr>
+  <tr><td>DELETE</td><td>/api/broadcasts/:id</td><td>소유자</td><td>soft delete. LIVE면 먼저 종료</td></tr>
+  <tr><td>POST</td><td>/api/broadcasts/:id/start</td><td>소유자</td><td><code>{ source }</code>. READY만. 송출 토큰과 WHIP URL 반환</td></tr>
+  <tr><td>POST</td><td>/api/broadcasts/:id/end</td><td>소유자</td><td>LIVE만. ENDED 전환 + 송출 세션 끊기</td></tr>
+  <tr><td>POST</td><td>/api/broadcasts/:id/publish-token</td><td>소유자</td><td>LIVE만. 송출자 재연결용 토큰 재발급</td></tr>
+  <tr><td>GET</td><td>/api/broadcasts/:id/events</td><td>공개</td><td>SSE. 댓글·후원·수정·종료·시청자 수 이벤트</td></tr>
+  <tr><td>GET</td><td>/api/broadcasts/:id/comments</td><td>공개</td><td>댓글 목록</td></tr>
+  <tr><td>POST</td><td>/api/broadcasts/:id/comments</td><td>로그인</td><td>작성 (rate limit) + SSE 전파</td></tr>
+  <tr><td>PATCH</td><td>/api/comments/:id</td><td>작성자</td><td>수정</td></tr>
+  <tr><td>DELETE</td><td>/api/comments/:id</td><td>작성자</td><td>soft delete</td></tr>
+  <tr><td>POST</td><td>/api/broadcasts/:id/donations</td><td>로그인</td><td>LIVE만. 주문 생성(PENDING), <code>orderId</code>·금액 반환</td></tr>
+  <tr><td>POST</td><td>/api/donations/confirm</td><td>로그인</td><td><code>{ paymentKey, orderId, amount }</code> 검증 후 토스 승인</td></tr>
+  <tr><td>GET</td><td>/api/broadcasts/:id/donations</td><td>공개</td><td>후원 내역 + 합계</td></tr>
+  <tr><td>GET</td><td>/api/recordings</td><td>공개</td><td>다시보기 목록 (READY만, 삭제된 방송 제외)</td></tr>
+  <tr><td>GET</td><td>/api/recordings/:id</td><td>공개</td><td>상세 + presigned 재생 URL(1시간)</td></tr>
+  <tr><td>POST</td><td>/api/webhooks/toss</td><td>조회 API 재확인</td><td>결제 상태 변경 (보조). 바디를 믿지 않고 결제 조회 API로 다시 확인</td></tr>
+  <tr><td>POST</td><td>/internal/media/auth</td><td>MediaMTX만</td><td>송출·시청 허용 여부 (200 허용, 401 거절)</td></tr>
+  <tr><td>POST</td><td>/internal/media/ready</td><td>MediaMTX만</td><td><code>runOnReady</code> 훅. 첫 송출 기록, 녹화 시작</td></tr>
+  <tr><td>POST</td><td>/internal/media/not-ready</td><td>MediaMTX만</td><td><code>runOnNotReady</code> 훅. 30초 유예 작업 등록</td></tr>
+  <tr><td>GET</td><td>/healthz, /readyz</td><td>공개</td><td>liveness, readiness(DB·Redis·MediaMTX 확인)</td></tr>
+</table></div>
+<ul>
+  <li><code>start</code>가 송출 토큰을 함께 반환해서, 상태 전환과 권한 발급이 한 번의 소유자 검증으로 묶인다.</li>
+  <li>송출 토큰은 연결을 맺을 때만 쓴다. 송출 중에 만료돼도 연결은 유지되고, 재연결이 필요할 때만 <code>publish-token</code>으로 다시 받는다.</li>
+</ul>
+
+<h2 id="pages">화면 구성</h2>
+<div class="table"><table>
+  <tr><th>경로</th><th>권한</th><th>내용</th></tr>
+  <tr><td>/</td><td>공개</td><td>방송 목록. LIVE 우선, 상태 배지(LIVE·종료), 10초마다 갱신</td></tr>
+  <tr><td>/login, /signup</td><td>공개</td><td>로그인·회원가입. 고정 계정 원클릭 버튼</td></tr>
+  <tr><td>/channels/:userId</td><td>공개</td><td>채널 페이지. LIVE면 플레이어, 아니면 오프라인 안내와 지난 방송 목록. 5초마다 확인해서 방송이 시작되면 자동으로 플레이어로 전환</td></tr>
+  <tr><td>/broadcasts/new</td><td>로그인</td><td>방송 등록 (제목·설명)</td></tr>
+  <tr><td>/broadcasts/:id</td><td>공개</td><td>상세·시청. READY는 대기 화면(5초마다 상태 확인), LIVE는 플레이어·댓글·후원, ENDED는 종료 안내와 다시보기 링크</td></tr>
+  <tr><td>/broadcasts/:id/studio</td><td>소유자</td><td>송출 화면. 소스 선택(화면공유·카메라), 미리보기, 음량 미터, 시작·종료, 수정·삭제</td></tr>
+  <tr><td>/me/broadcasts</td><td>로그인</td><td>내 방송 목록. READY 방송에서 스튜디오로 이동</td></tr>
+  <tr><td>/recordings, /recordings/:id</td><td>공개</td><td>다시보기 목록·재생</td></tr>
+</table></div>
+<p>스튜디오는 서버 컴포넌트에서 소유자를 확인하고, 소유자가 아니면 상세 화면으로 보낸다. 화면공유를 지원하지 않는 브라우저(모바일)에서는 소스 선택에 카메라만 보인다.</p>
+
+<h2 id="flows">핵심 흐름</h2>
+<h3>송출 시작</h3>
+<ol>
+  <li>소유자가 방송 등록 → READY.</li>
+  <li>스튜디오에서 미디어 권한부터 확보한다(<code>getDisplayMedia</code> 또는 <code>getUserMedia</code>). 권한 거부 시 서버 호출 없이 중단.</li>
+  <li><code>POST /start { source }</code> → 서버가 소유자·READY 확인 → <code>UPDATE ... SET status='LIVE' WHERE id=? AND status='READY'</code>(영향 행 0이면 409) → 송출 토큰 발급 → <code>start-timeout</code>(2분) 등록 → <code>{ whipUrl, token }</code> 응답.</li>
+  <li>클라이언트가 <code>RTCPeerConnection</code>에 영상 트랙 1개와 믹스된 음성 트랙 1개를 넣고, <code>setCodecPreferences</code>로 H.264를 우선한다.</li>
+  <li>WHIP: offer SDP를 <code>POST /media/live/{id}/whip?token=…</code>로 보내고 answer를 적용한다.</li>
+  <li>MediaMTX가 <code>/internal/media/auth</code>에 <code>action=publish</code>로 묻는다. 앱은 토큰·소유자·LIVE를 확인해 허용한다.</li>
+  <li>송출이 붙으면 <code>runOnReady</code> 훅 → <code>first_published_at</code> 기록, 녹화 RECORDING. MediaMTX는 경로 설정에 따라 디스크에 녹화를 시작한다.</li>
+</ol>
+<h3>시청</h3>
+<ol>
+  <li>상세 화면 진입 → LIVE면 WHEP: <code>POST /media/live/{id}/whep</code>(토큰 없음). 인증 훅은 <code>action=read</code>에 대해 LIVE만 확인한다. READY면 대기 화면에서 5초마다 상태를 확인한다.</li>
+  <li><code>&lt;video muted autoplay playsinline&gt;</code>로 재생한다. 영상과 음성이 한 연결로 오므로 "탭해서 소리 켜기" 버튼은 video의 음소거만 풀면 된다.</li>
+  <li>SSE를 구독해서 댓글·후원·제목 변경·시청자 수를 반영한다. <code>broadcast.ended</code>를 받으면 "방송이 종료되었습니다" 화면으로 바꾼다.</li>
+  <li>WebRTC 연결이 끊기면(<code>connectionState=failed</code>) 3초 뒤 상태를 확인하고, 아직 LIVE면 WHEP로 다시 연결한다.</li>
+</ol>
+<h3>종료</h3>
+<ol>
+  <li>정상 종료: <code>POST /end</code> → 서버가 소유자·LIVE 확인 → ENDED(<code>end_reason=OWNER</code>) → Control API로 송출 세션 끊기 → SSE <code>broadcast.ended</code>.</li>
+  <li>비정상 종료: 송출자 탭 닫힘·네트워크 끊김 → <code>runOnNotReady</code> 훅 → 30초 유예 후에도 송출자가 없으면 ENDED(<code>DISCONNECTED</code>). 유예는 BullMQ 지연 작업으로 처리한다.</li>
+  <li>화면공유 "공유 중지" 클릭(<code>track.onended</code>) → 클라이언트가 <code>POST /end</code> 호출.</li>
+  <li>송출자 클라이언트는 종료 응답을 받거나 연결이 끊기면 로컬 트랙을 모두 <code>stop()</code>하고, AudioContext와 PeerConnection을 닫는다. 서버가 세션을 끊어도 브라우저의 카메라·화면 캡처는 따로 꺼야 한다.</li>
+</ol>
+<h3>녹화</h3>
+<ol>
+  <li>MediaMTX가 <code>/recordings/live/{id}/</code> 아래에 fMP4 조각을 10분 단위로 저장한다. 송출자가 재접속해도 같은 경로에 이어서 쌓인다.</li>
+  <li>방송이 ENDED가 되면 워커의 <code>process-recording</code> 작업이 녹화를 PROCESSING으로 바꾸고 조각을 하나로 합친다: <code>ffmpeg -f concat -i list.txt -c:v copy -c:a aac -t 3600 -movflags +faststart out.mp4</code>. 영상은 재인코딩하지 않고, 음성만 Opus → AAC로 바꿔 모든 브라우저에서 재생되게 한다. 60분이 넘는 부분은 잘라낸다.</li>
+  <li>R2에 업로드(<code>@aws-sdk/lib-storage</code>, 고정 파트 크기)한 뒤 <code>s3_key</code>, <code>size_bytes</code>, <code>duration_sec</code>를 기록하고 READY. 서버에 남은 조각은 바로 지운다. 실패하면 3회 재시도 후 FAILED.</li>
+  <li><b>용량 정책</b>: 업로드 후 READY 녹화의 <code>size_bytes</code> 합이 8GB(R2 무료 10GB의 80%)를 넘으면, demo 계정 것을 제외하고 가장 오래된 녹화부터 R2 객체와 행을 지워 8GB 아래로 맞춘다. 이 동작은 README에 적는다.</li>
+  <li>재생: <code>GET /api/recordings/:id</code>가 presigned URL(1시간)을 주고, <code>&lt;video src&gt;</code>로 재생한다.</li>
+</ol>
+<h3>후원</h3>
+<ol>
+  <li><code>POST /donations { amount, message }</code> → 서버가 방송이 LIVE인지 확인하고 <code>recipient_id = 방송 owner</code>로 고정, <code>orderId</code> 발급, PENDING 저장. 후원 창에는 "받는 사람: {닉네임}"을 크게 보여준다.</li>
+  <li>클라이언트가 토스 결제위젯을 위젯 연동 키(<code>test_gck_</code>)와 <code>orderId</code>·금액으로 호출한다(테스트 모드).</li>
+  <li>성공 리다이렉트 → <code>POST /donations/confirm</code> → 서버가 <code>orderId</code>의 저장 금액과 요청 금액을 대조 → 토스 승인 API 호출(<code>Idempotency-Key</code> = <code>orderId</code>).</li>
+  <li>승인 응답의 <code>orderId</code>·<code>totalAmount</code>·<code>status=DONE</code> 재확인 → <code>UPDATE ... SET status='DONE', payment_key=? WHERE order_id=? AND status='PENDING'</code>.</li>
+  <li>영향 행이 1이면 SSE <code>donation.created</code>로 방송 화면에 후원 알림을 띄운다. 0이면 이미 처리된 것으로 보고 기존 결과를 돌려준다.</li>
+  <li>승인 API가 <code>ALREADY_PROCESSED_PAYMENT</code>를 돌려주면(새로고침 등으로 confirm 재요청) 결제 조회 API로 상태를 확인해 4번과 같은 조건부 업데이트를 한다.</li>
+  <li>토스 웹훅은 바디를 믿지 않고 <code>paymentKey</code>로 결제 조회 API를 다시 불러 확인한 뒤, 같은 조건부 업데이트를 거친다. 반복 통지가 와도 한 번만 적립된다.</li>
+  <li>승인은 됐는데 DB 반영 전에 서버가 죽은 경우: 정리 작업이 10분 넘은 PENDING 주문을 <code>orderId</code>로 조회해 DONE이면 반영하고, 30분 넘게 결제가 없으면 FAILED로 바꾼다.</li>
+</ol>
+<h3>실시간 알림 (SSE)</h3>
+<ol>
+  <li>시청 화면은 <code>GET /api/broadcasts/:id/events</code>(<code>text/event-stream</code>)를 연다. 앱은 Redis 채널 <code>bc:{id}</code>를 구독해서 받은 이벤트를 흘려보낸다.</li>
+  <li>쓰기 API(댓글, 후원 확정, 방송 수정, 종료)는 DB 반영 후 Redis에 publish한다. 앱이 여러 개 떠 있어도 모든 SSE 연결로 전달되므로 stateless가 유지된다.</li>
+  <li>이벤트: <code>comment.created</code>, <code>comment.updated</code>, <code>comment.deleted</code>, <code>donation.created</code>, <code>broadcast.updated</code>, <code>broadcast.ended</code>, <code>viewers</code>(10초마다 시청자 수).</li>
+  <li>15초마다 하트비트 주석(<code>:</code>)을 보내 프록시 타임아웃을 막는다. Caddy는 <code>text/event-stream</code> 응답을 버퍼링 없이 바로 흘려보낸다. 끊기면 EventSource가 자동으로 다시 연결하고, 클라이언트는 재연결 때 목록 API로 빠진 댓글을 보정한다.</li>
+</ol>
+
+<h2 id="client">클라이언트 미디어 처리</h2>
+<p>영상은 H.264로 송출하고, 오디오는 마이크와 화면 소리를 WebAudio로 섞어 <b>트랙 1개</b>로 publish한다. 연결은 WHIP(송출)와 WHEP(시청) 표준을 쓴다. 각각 SDP offer/answer를 HTTP로 한 번 주고받는 100줄 안팎의 코드이고, MediaMTX 저장소의 예제(MIT)를 참고해 출처를 README에 적는다.</p>
+<pre><code>// 시작 버튼 클릭 핸들러 안에서 실행 (AudioContext는 사용자 동작이 필요)
+const ctx = new AudioContext();
+const dest = ctx.createMediaStreamDestination();
+ctx.createMediaStreamSource(micStream).connect(dest);
+if (screenStream.getAudioTracks().length &gt; 0) {
+  ctx.createMediaStreamSource(screenStream).connect(dest);   // 탭·시스템 소리
+}
+const mixed = dest.stream.getAudioTracks()[0];               // 이 트랙 하나만 송출</code></pre>
+<h3>송출 설정</h3>
+<div class="table"><table>
+  <tr><th>항목</th><th>PC 화면공유</th><th>모바일 카메라</th></tr>
+  <tr><td>획득</td><td><code>getDisplayMedia({ video, audio: true, systemAudio: 'include', selfBrowserSurface: 'exclude' })</code> + <code>getUserMedia({ audio })</code> → WebAudio 믹스</td><td><code>getUserMedia({ video: { facingMode }, audio })</code></td></tr>
+  <tr><td>해상도·fps</td><td>1080p, 15fps</td><td>720p, 30fps</td></tr>
+  <tr><td>비트레이트</td><td>최대 2.5Mbps (<code>RTCRtpSender.setParameters</code>)</td><td>최대 1.5Mbps</td></tr>
+  <tr><td>화질 단계</td><td>단일 화질 (simulcast 없음)</td><td>단일 화질</td></tr>
+  <tr><td>오디오 처리</td><td>화면 소리는 <code>echoCancellation</code>·<code>noiseSuppression</code> 끔, 마이크는 켬</td><td>마이크 기본값</td></tr>
+  <tr><td>추가 UX</td><td>화면 소리 미포함 시 경고, 마이크·화면 소리 음량 미터</td><td>전·후면 전환, Wake Lock, 음량 미터</td></tr>
+</table></div>
+<h3>예외 처리</h3>
+<ul>
+  <li>화면공유 "공유 중지" → <code>track.onended</code> → <code>POST /end</code>.</li>
+  <li>화면 소리 트랙이 없으면(사용자가 체크 해제, 미지원 브라우저) 마이크만 믹스에 넣어 송출하고 배너로 알린다.</li>
+  <li>모바일 백그라운드 전환 → <code>visibilitychange</code>로 감지. 30초 안에 돌아오면 장치를 다시 획득해 <code>RTCRtpSender.replaceTrack()</code>으로 갈아 끼운다. 연결을 다시 맺지 않으므로 송출과 녹화가 이어진다. 30초가 지나면 서버 측 유예 처리로 ENDED.</li>
+  <li>연결이 완전히 끊기면(<code>connectionState=failed</code>) <code>publish-token</code>으로 토큰을 다시 받아 WHIP로 재연결한다. MediaMTX의 <code>overridePublisher</code> 설정으로 새 연결이 이전 송출을 대체한다.</li>
+  <li>방송 종료 → 로컬 트랙 전부 <code>stop()</code>, AudioContext <code>close()</code>, PeerConnection <code>close()</code>.</li>
+</ul>
+<h3>시청</h3>
+<ul>
+  <li><code>muted autoplay playsinline</code>으로 자동재생 후 "탭해서 소리 켜기" 버튼 노출.</li>
+  <li>시청자 수는 앱이 Control API에서 경로의 시청 세션 수를 읽어 Redis에 5초 캐시하고, SSE <code>viewers</code> 이벤트로 내려준다.</li>
+</ul>
+<h3>지원 환경 (README 표 초안)</h3>
+<div class="table"><table>
+  <tr><th>환경</th><th>화면 송출</th><th>탭 소리</th><th>시스템 소리</th><th>카메라 송출</th><th>시청</th></tr>
+  <tr><td>Windows Chrome·Edge</td><td>O</td><td>O</td><td>O</td><td>O</td><td>O</td></tr>
+  <tr><td>macOS Chrome</td><td>O</td><td>O</td><td>실기기 확인 필요</td><td>O</td><td>O</td></tr>
+  <tr><td>macOS Safari</td><td>O</td><td>X</td><td>X</td><td>O</td><td>O</td></tr>
+  <tr><td>Firefox (Windows·macOS)</td><td>O</td><td>X</td><td>X</td><td>O</td><td>O</td></tr>
+  <tr><td>Android Chrome</td><td>X</td><td>X</td><td>X</td><td>O</td><td>O</td></tr>
+  <tr><td>iOS Safari</td><td>X</td><td>X</td><td>X</td><td>O</td><td>O</td></tr>
+</table></div>
+<p>macOS의 시스템 소리 지원은 브라우저·OS 버전에 따라 달라서, 구현 후 실기기로 확인해 표를 확정한다. 443 포트만 열린 엄격한 회사망에서는 시청이 안 될 수 있다는 점도 표 아래에 적는다.</p>
+
+<h2 id="ops">Redis와 운영</h2>
+<p>Redis 하나를 용도별 접두사로 나눠 쓴다.</p>
+<div class="table"><table>
+  <tr><th>키</th><th>TTL</th><th>용도</th></tr>
+  <tr><td><code>auth:rt:{jti}</code> → <code>{userId, family}</code></td><td>14일</td><td>refresh 토큰 (교체 후 30초는 새 토큰 참조)</td></tr>
+  <tr><td><code>auth:family:{family}</code> (set of jti)</td><td>14일</td><td>탈취 감지 시 일괄 폐기</td></tr>
+  <tr><td><code>auth:bl:{jti}</code></td><td>access 남은 수명</td><td>로그아웃한 access 차단</td></tr>
+  <tr><td><code>media:pub:{token}</code> → <code>{broadcastId, userId}</code></td><td>15분</td><td>송출 토큰</td></tr>
+  <tr><td><code>wh:toss:{eventId}</code></td><td>30초</td><td>토스 웹훅 동시 처리 락. 최종 중복 제거는 <code>webhook_events</code></td></tr>
+  <tr><td><code>rl:{route}:{ip or userId}</code></td><td>1분</td><td>rate limit (로그인 5회, 회원가입 3회, 댓글 10회)</td></tr>
+  <tr><td><code>viewers:{broadcastId}</code></td><td>5초</td><td>시청자 수 캐시 (Control API 결과)</td></tr>
+  <tr><td><code>bc:{broadcastId}</code></td><td>-</td><td>SSE 이벤트 pub/sub 채널</td></tr>
+  <tr><td><code>bull:*</code></td><td>BullMQ 관리</td><td><code>end-if-absent</code>·<code>start-timeout</code>(지연), <code>process-recording</code>, <code>reconcile</code>·<code>donation-sweep</code>·<code>db-backup</code>(반복) 큐</td></tr>
+</table></div>
+<h3>저장소 구조</h3>
+<pre><code>dudung/
+  src/
+    app/            # 화면 + Route Handler (얇게)
+    server/
+      auth/         # jwt, password, cookies
+      broadcast/    # service, repository, 상태 전환
+      media/        # MediaMTX 인증·훅 처리, Control API 클라이언트
+      realtime/     # SSE, Redis pub/sub
+      comment/  donation/  recording/
+      common/       # errors(problem+json), logger, redis, db
+    worker/         # BullMQ 프로세서 (같은 이미지, 다른 실행 명령)
+  drizzle/          # 스키마, 마이그레이션, seed(고정 계정, demo)
+  deploy/
+    compose/        # docker-compose.yml(운영), compose.local.yml(로컬), Caddyfile, mediamtx.yml
+  scripts/          # authz-check.sh: 권한 매트릭스를 curl로 재현
+  tests/            # integration(testcontainers), e2e(playwright)</code></pre>
+<h3>MediaMTX 설정 (요지)</h3>
+<pre><code>authMethod: http
+authHTTPAddress: http://127.0.0.1:3000/internal/media/auth
+authHTTPExclude:
+  - action: api              # Control API는 127.0.0.1에서만 열어 둔다
+api: yes
+apiAddress: 127.0.0.1:9997
+webrtcAddress: 127.0.0.1:8889          # Caddy만 접근
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189           # TCP 폴백
+webrtcAdditionalHosts: [&lt;서버 공인 IP&gt;]
+pathDefaults:
+  record: yes
+  recordFormat: fmp4
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordSegmentDuration: 10m
+  recordDeleteAfter: 48h               # 워커가 실패했을 때의 안전장치
+  overridePublisher: yes
+  runOnReady: wget -qO- --post-data "" --header "X-Internal-Secret: $INTERNAL_SECRET" "http://127.0.0.1:3000/internal/media/ready?path=$MTX_PATH"
+  runOnNotReady: wget -qO- --post-data "" --header "X-Internal-Secret: $INTERNAL_SECRET" "http://127.0.0.1:3000/internal/media/not-ready?path=$MTX_PATH"
+paths:
+  "~^live/[0-9a-f-]+$": {}</code></pre>
+<p>키 이름과 훅의 환경변수 치환 방식은 구현할 때 MediaMTX 문서로 다시 확인한다.</p>
+<h3>CI/CD</h3>
+<ol>
+  <li>PR: lint, typecheck, 통합 테스트(testcontainers).</li>
+  <li>main 머지: GitHub Actions ARM64 러너(<code>ubuntu-24.04-arm</code>, 공개 저장소 무료)에서 이미지 빌드 → GHCR push → SSH로 서버에서 <code>docker compose pull &amp;&amp; docker compose up -d</code>.</li>
+  <li>마이그레이션은 앱 시작 전 one-shot <code>migrate</code> 컨테이너가 한 번 실행한다(<code>depends_on</code>).</li>
+</ol>
+<h3>로컬 실행</h3>
+<ul>
+  <li><code>docker compose -f deploy/compose/compose.local.yml up</code> 하나로 app, worker, PostgreSQL, Redis, MediaMTX, MinIO(R2 대체)를 띄운다. 도메인과 클라우드 계정 없이 동작한다.</li>
+  <li>PC 브라우저는 <code>http://localhost</code>가 보안 컨텍스트라 화면공유·카메라가 동작한다. 휴대폰 송출은 HTTPS가 필요해서 배포 서버로 확인하도록 README에 적는다.</li>
+  <li>토스 테스트 키가 없으면 후원 UI를 숨기고, 나머지 기능은 그대로 동작한다.</li>
+</ul>
+<h3>서버와 가용성</h3>
+<ul>
+  <li>서버: Oracle Cloud Always Free ARM(A1) 1 OCPU / 8GB, 오사카 리전. 메모리 상한 예시: PostgreSQL 1GB, app 1GB, worker 512MB, Redis 256MB, MediaMTX 256MB, Caddy 128MB.</li>
+  <li>Oracle은 CPU·네트워크·메모리 사용률이 모두 낮은 Always Free 인스턴스를 유휴로 보고 정지시킬 수 있다. 외부 업타임 모니터(무료 서비스)가 <code>/readyz</code>를 1분마다 확인하고, 실패하면 알림을 받아 다시 켠다.</li>
+  <li>PostgreSQL은 named volume에 두고, 하루 한 번 <code>db-backup</code> 작업이 <code>pg_dump</code>를 R2 <code>backups/</code>에 올린다(7일 보관).</li>
+</ul>
+<h3>로깅과 헬스체크</h3>
+<ul>
+  <li>pino JSON 로그, 요청마다 <code>requestId</code> 헤더 전파. 미디어 인증 거절, 훅, 결제, 상태 전환은 반드시 로그를 남긴다. 송출 토큰은 로그에 남기지 않는다.</li>
+  <li><code>/healthz</code>는 프로세스 생존만, <code>/readyz</code>는 DB·Redis·MediaMTX API까지 확인한다.</li>
+</ul>
+<h3>환경변수 (<code>.env.example</code>)</h3>
+<pre><code>APP_URL=https://dudung.duckdns.org
+DATABASE_URL=postgres://...
+REDIS_URL=redis://127.0.0.1:6379/0
+JWT_PRIVATE_KEY=     # ES256 PEM
+JWT_PUBLIC_KEY=
+INTERNAL_SECRET=     # MediaMTX 훅 → 앱 내부 API
+MEDIAMTX_API_URL=http://127.0.0.1:9997
+MEDIAMTX_PUBLIC_IP=  # webrtcAdditionalHosts에 들어갈 서버 공인 IP
+S3_ENDPOINT=         # 운영은 R2 엔드포인트, 로컬은 MinIO 주소
+S3_BUCKET=
+S3_ACCESS_KEY_ID=
+S3_SECRET_ACCESS_KEY=
+TOSS_CLIENT_KEY=     # 결제위젯 연동 키 test_gck_...
+TOSS_SECRET_KEY=     # 결제위젯 시크릿 키 test_gsk_...
+TEST_LOGIN_ENABLED=true</code></pre>
+
+<h2 id="test">테스트 전략</h2>
+<p>평가에서 가장 비중이 큰 권한 검증과 상태 전환을 자동 테스트로 증명하고, 그 결과를 README에 링크한다.</p>
+<div class="table"><table>
+  <tr><th>층</th><th>도구</th><th>대상</th></tr>
+  <tr><td>단위</td><td>Vitest</td><td>상태 전환 규칙(송출 없이 끝나면 READY 복귀 포함), JWT 발급·검증·rotation 유예, 후원 금액 검증, 녹화 용량 정책의 삭제 순서</td></tr>
+  <tr><td>통합</td><td>Vitest + testcontainers (Postgres, Redis)</td><td>권한 매트릭스 전체, 미디어 인증 훅(토큰·소유자·상태별 허용과 거절), 조건부 업데이트 동시성, 훅 순서 뒤바뀜, 토스 웹훅 중복·처리 실패 후 재전송, 후원 중복 승인·<code>ALREADY_PROCESSED_PAYMENT</code>, refresh 동시 요청</td></tr>
+  <tr><td>E2E</td><td>Playwright (<code>--use-fake-device-for-media-stream</code>, <code>--use-fake-ui-for-media-stream</code>) + 로컬 MediaMTX</td><td>송출 → 다른 브라우저 컨텍스트 시청 → 종료, 시청 화면 종료 전환, 종료 후 같은 토큰으로 재송출 거절, 녹화 READY 후 재생</td></tr>
+  <tr><td>수동</td><td>실기기</td><td>iOS Safari·Android Chrome 카메라 송출, Windows 시스템 소리, 모바일 데이터망, UDP가 막힌 망(TCP 폴백), 화면공유 중 창 크기 변경 후 녹화 재생</td></tr>
+</table></div>
+<ul>
+  <li>MediaMTX Control API와 토스 API는 통합 테스트에서 인터페이스 뒤로 감추고 가짜 구현을 주입한다.</li>
+  <li>동시성 테스트: 같은 방송에 <code>start</code> 2건 동시 → 1건만 성공, 같은 <code>orderId</code> confirm 2건 동시 → 적립 1건, 같은 refresh 토큰 2건 동시 → 둘 다 성공하고 로그아웃되지 않음.</li>
+  <li><b>구현 첫날 확인할 위험</b>: 화면공유 중에 공유 창 크기를 바꿨을 때 MediaMTX 녹화 조각과 합친 MP4가 정상 재생되는지. 문제가 있으면 송출 해상도를 고정하는 방법을 찾는다.</li>
+  <li><code>scripts/authz-check.sh</code>를 배포 서버에 돌린 결과를 README에 붙인다.</li>
+</ul>
+
+<h2 id="readme">README와 시연 영상</h2>
+<p>README는 심사자가 위에서부터 따라 하면 기능을 확인할 수 있는 순서로 쓴다.</p>
+<ol>
+  <li><b>서비스 주소</b>와 <b>시연 영상 링크</b> (맨 위)</li>
+  <li><b>테스트 계정</b>: 고정 계정과 비밀번호, 원클릭 로그인 버튼 위치, 소유자·다른 사용자 확인 방법(브라우저 2개에서 다른 계정으로 로그인)</li>
+  <li><b>기능 확인 절차</b>: PC 송출(화면 소리 체크 위치 캡처 포함), 모바일 송출, 다른 기기 시청, 종료, 다시보기, 댓글, 후원(테스트 결제)</li>
+  <li><b>권한 확인</b>: 권한 매트릭스 표와 <code>scripts/authz-check.sh</code> 실행 방법·결과</li>
+  <li><b>지원 환경</b> 표와 네트워크 제한(443만 열린 망)</li>
+  <li><b>실행 방법</b>: 로컬(<code>compose.local.yml</code>)과 운영, <code>.env.example</code> 설명</li>
+  <li><b>아키텍처</b> 요약, 상태 전환 규칙, 녹화 용량 정책(8GB 초과 시 오래된 녹화 삭제)</li>
+  <li><b>오픈소스 출처</b>: MediaMTX(서버, WHIP/WHEP 예제 코드), Next.js, shadcn/ui, Tailwind, Drizzle, BullMQ, jose, 토스페이먼츠 SDK 등의 이름·링크·라이선스</li>
+</ol>
+<h3>시연 영상 시나리오</h3>
+<div class="table"><table>
+  <tr><th>장면</th><th>내용</th></tr>
+  <tr><td>1. PC 송출</td><td>로그인 → 방송 등록 → 화면공유(탭 소리 체크) + 마이크 → 음량 미터 확인 → 휴대폰에서 시청(소리 포함) → 종료 → 휴대폰 화면이 종료 안내로 바뀜</td></tr>
+  <tr><td>2. 모바일 송출</td><td>휴대폰 로그인 → 카메라 송출 → PC에서 시청 → 휴대폰에서 종료 → PC 화면 전환</td></tr>
+  <tr><td>3. 권한</td><td>비로그인 시청 가능, 비로그인으로 방송 등록 → 로그인 화면 이동, 다른 사용자의 수정·삭제 → 403 (<code>authz-check.sh</code> 실행 화면)</td></tr>
+  <tr><td>4. 선택 기능</td><td>댓글 작성·수정·삭제, 테스트 결제 후원과 합계, 다시보기 재생</td></tr>
+</table></div>
+<p>송출 기기와 시청 기기가 한 화면에 같이 보이게 찍는다(화면 녹화 + 휴대폰 미러링 또는 카메라 촬영).</p>
+
+</div>
+</body>
+</html>
