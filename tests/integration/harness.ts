@@ -64,7 +64,7 @@ export class Actor {
     path: string,
     opts: { body?: unknown; headers?: Record<string, string>; origin?: string | null } = {},
   ): Promise<Res<T>> {
-    const headers: Record<string, string> = { 'x-forwarded-for': this.ip, ...(opts.headers ?? {}) };
+    const headers: Record<string, string> = { 'x-forwarded-for': this.ip, ...opts.headers };
     const pathname = path.split('?')[0]!;
     const cookie = this.cookieHeader(pathname);
     if (cookie) headers.cookie = cookie;

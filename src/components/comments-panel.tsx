@@ -27,7 +27,7 @@ export const CommentsPanel = forwardRef<CommentsHandle, { broadcastId: string; c
 
     const reload = useCallback(async () => {
       const page = await api<Page<CommentItem>>(`/api/broadcasts/${broadcastId}/comments?limit=50`);
-      setItems(page.items.slice().reverse());
+      setItems(page.items.toReversed());
       setCursor(page.nextCursor);
     }, [broadcastId]);
 
@@ -51,7 +51,7 @@ export const CommentsPanel = forwardRef<CommentsHandle, { broadcastId: string; c
       if (!cursor) return;
       const page = await api<Page<CommentItem>>(`/api/broadcasts/${broadcastId}/comments?limit=50&cursor=${cursor}`);
       stickToBottom.current = false;
-      setItems((prev) => [...page.items.slice().reverse(), ...prev]);
+      setItems((prev) => [...page.items.toReversed(), ...prev]);
       setCursor(page.nextCursor);
     };
 

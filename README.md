@@ -117,6 +117,7 @@ app, worker, PostgreSQL, Redis, MediaMTX, Caddy, S3 호환 저장소(SeaweedFS �
 ```bash
 pnpm install
 pnpm typecheck
+pnpm lint        # oxlint (타입 정보가 필요한 규칙 포함, 경고도 실패로 본다)
 pnpm test        # 통합 테스트: testcontainers 로 PostgreSQL·Redis 를 띄운다 (Docker 필요)
 pnpm test:e2e    # 브라우저 E2E: 위 로컬 스택을 띄운 뒤 실행 (Google Chrome, 가짜 카메라·마이크)
 ```
@@ -177,5 +178,6 @@ worker (BullMQ): 30초 유예 종료 · 2분 시작 타임아웃 · 정합성 �
 | [FFmpeg](https://ffmpeg.org) | 녹화 조각 합치기 | LGPL/GPL |
 | [SeaweedFS](https://github.com/seaweedfs/seaweedfs) | 로컬 개발용 S3 호환 저장소 | Apache-2.0 |
 | [Vitest](https://github.com/vitest-dev/vitest), [Testcontainers](https://github.com/testcontainers/testcontainers-node), [Playwright](https://github.com/microsoft/playwright) | 테스트 | MIT, MIT, Apache-2.0 |
+| [Oxlint](https://github.com/oxc-project/oxc), [oxlint-tsgolint](https://github.com/oxc-project/tsgolint) | 린트 | MIT |
 
 설계 근거는 `plan.html`(설계 문서)과 `REQUIREMENTS.md`(공모 요강)에 있습니다.

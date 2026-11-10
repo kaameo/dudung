@@ -17,7 +17,10 @@ export function RefreshGate({ next }: { next: string }) {
       return;
     }
     sessionStorage.setItem(key, String(Date.now()));
-    refreshSession().then((ok) => (ok ? router.refresh() : router.replace(`/login?next=${encodeURIComponent(next)}`)));
+    void (async () => {
+      if (await refreshSession()) router.refresh();
+      else router.replace(`/login?next=${encodeURIComponent(next)}`);
+    })();
   }, [next, router]);
   return <p className="text-sm text-muted">로그인 상태를 확인하는 중…</p>;
 }

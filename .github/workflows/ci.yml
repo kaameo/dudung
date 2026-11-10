@@ -17,5 +17,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm lint
       # 통합 테스트: testcontainers 가 PostgreSQL·Redis 컨테이너를 띄운다.
       - run: pnpm test

@@ -232,11 +232,11 @@ export function createDonationService(deps: Deps, broadcasts: BroadcastService) 
             ? await payments.getPayment(d.paymentKey)
             : await payments.getPaymentByOrderId(d.orderId);
         } catch (err) {
-          const notFound = err instanceof TossError && err.httpStatus === 404;
-          if (!notFound) log.warn({ err, orderId: d.orderId }, 'donation sweep lookup failed');
+          const missing = err instanceof TossError && err.httpStatus === 404;
+          if (!missing) log.warn({ err, orderId: d.orderId }, 'donation sweep lookup failed');
           // paymentKey 가 있으면 승인을 시도한 주문이라 조회가 될 때까지 기다린다.
           // 없으면 승인 요청 자체가 없었으므로(confirm 이 승인 전에 키를 남긴다) 아래 30분 만료 규칙을 그대로 적용한다.
-          if (!notFound && d.paymentKey) continue;
+          if (!missing && d.paymentKey) continue;
         }
         if (payment && verified(d, payment)) {
           const row = await markDone(d, payment);

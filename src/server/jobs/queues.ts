@@ -12,7 +12,7 @@ export const RECORDING_ATTEMPTS = 3;
 const endJobKey = (id: string) => `media:endjob:${id}`;
 
 export function connectionFrom(url: string): ConnectionOptions {
-  return { url, maxRetriesPerRequest: null } as ConnectionOptions;
+  return { url, maxRetriesPerRequest: null };
 }
 
 /** 앱에서 지연·비동기 작업을 거는 쪽. 처리는 worker 프로세스가 한다. */

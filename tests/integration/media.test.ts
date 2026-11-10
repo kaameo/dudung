@@ -292,7 +292,7 @@ describe('정합성 정리', () => {
     h.media.failKick = false;
     h.media.setPublishing('live/01930000-0000-7000-8000-0000000000ff', true); // DB 에 없는 경로
     await h.handlers.reconcile();
-    expect(h.media.kicked.sort()).toEqual([b.pathName, 'live/01930000-0000-7000-8000-0000000000ff'].sort());
+    expect(new Set(h.media.kicked)).toEqual(new Set([b.pathName, 'live/01930000-0000-7000-8000-0000000000ff']));
   });
 
   it('송출 중인 정상 방송은 건드리지 않는다', async () => {

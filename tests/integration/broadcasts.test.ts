@@ -147,7 +147,7 @@ describe('시작과 종료', () => {
       owner.post(`/api/broadcasts/${b.id}/start`, { source: 'SCREEN' }),
       owner.post(`/api/broadcasts/${b.id}/start`, { source: 'SCREEN' }),
     ]);
-    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(results.map((r) => r.status).toSorted((x, y) => x - y)).toEqual([200, 409]);
   });
 
   it('LIVE 방송은 사용자당 하나뿐이다', async () => {

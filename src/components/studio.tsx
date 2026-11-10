@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api, ApiError, errorMessage } from '@/lib/client/api';
 import {
   canShareScreen,
@@ -24,6 +24,7 @@ type Phase = 'idle' | 'preparing' | 'connecting' | 'live' | 'reconnecting' | 'en
 
 /** 모바일에서 다른 앱에 다녀와도 방송을 이어 가는 시간. 서버의 끊김 유예와 같다. */
 const RESUME_WINDOW_MS = 30_000;
+const noSubscribe = () => () => {};
 const sameOrigin = (url: string) => {
   const u = new URL(url, location.href);
   return `${u.pathname}${u.search}`;
@@ -56,10 +57,12 @@ function Meter({ label, analyser }: { label: string; analyser: AnalyserNode | nu
 export function Studio({ id }: { id: string }) {
   const router = useRouter();
   const [b, setB] = useState<BroadcastDetail | null>(null);
-  const [source, setSource] = useState<Source>('CAMERA');
-  const [screenSupported, setScreenSupported] = useState(false);
+  // 화면공유 지원 여부는 브라우저에서만 알 수 있다. 서버 렌더에서는 false 로 둔다.
+  const screenSupported = useSyncExternalStore(noSubscribe, canShareScreen, () => false);
+  const [sourceChoice, setSource] = useState<Source | null>(null);
+  const source: Source = sourceChoice ?? (screenSupported ? 'SCREEN' : 'CAMERA');
   const [facing, setFacing] = useState<'user' | 'environment'>('user');
-  const [phase, setPhase] = useState<Phase>('idle');
+  const [phase, setPhaseState] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [captured, setCaptured] = useState<Captured | null>(null);
   const [edit, setEdit] = useState({ title: '', description: '' });
@@ -73,8 +76,15 @@ export function Studio({ id }: { id: string }) {
   const wakeLock = useRef<WakeLockSentinel | null>(null);
   const ending = useRef(false);
   const hiddenAt = useRef<number | null>(null);
+  // 이벤트 핸들러가 최신 단계를 바로 읽을 수 있게 상태와 ref 를 함께 바꾼다.
   const phaseRef = useRef<Phase>('idle');
-  phaseRef.current = phase;
+  const setPhase = useCallback((next: Phase | ((prev: Phase) => Phase)) => {
+    const value = typeof next === 'function' ? next(phaseRef.current) : next;
+    phaseRef.current = value;
+    setPhaseState(value);
+  }, []);
+  // connect 와 reconnect 는 서로를 부른다. connect 는 ref 로 최신 reconnect 를 부른다.
+  const reconnectRef = useRef<() => Promise<void>>(async () => {});
 
   const load = useCallback(async () => {
     const res = await api<{ broadcast: BroadcastDetail }>(`/api/broadcasts/${id}`);
@@ -83,9 +93,6 @@ export function Studio({ id }: { id: string }) {
   }, [id]);
 
   useEffect(() => {
-    const screen = canShareScreen();
-    setScreenSupported(screen);
-    setSource(screen ? 'SCREEN' : 'CAMERA');
     load()
       .then((x) => setEdit({ title: x.title, description: x.description ?? '' }))
       .catch((err) => setError(errorMessage(err)));
@@ -118,17 +125,17 @@ export function Studio({ id }: { id: string }) {
     wakeLock.current?.release().catch(() => {});
     wakeLock.current = null;
     setPhase(next);
-  }, []);
+  }, [setPhase]);
 
   useEffect(() => () => cleanup('idle'), [cleanup]);
 
-  const requestWakeLock = async () => {
+  const requestWakeLock = useCallback(async () => {
     try {
       if ('wakeLock' in navigator) wakeLock.current = await navigator.wakeLock.request('screen');
     } catch {
       /* 지원하지 않거나 거부되면 화면 꺼짐 방지 없이 진행한다. */
     }
-  };
+  }, []);
 
   const connect = useCallback(
     async (whipUrl: string, token: string) => {
@@ -147,12 +154,12 @@ export function Studio({ id }: { id: string }) {
         if (pubRef.current !== pub) return;
         const s = pub.pc.connectionState;
         if (s === 'connected') setPhase('live');
-        if (s === 'failed') void reconnect();
+        if (s === 'failed') void reconnectRef.current();
       };
       pub.pc.addEventListener('connectionstatechange', onState);
       onState();
     },
-    [],
+    [setPhase],
   );
 
   /** 연결이 완전히 끊기면 송출 토큰을 다시 받아 WHIP 로 다시 붙는다. 새 연결이 이전 송출을 대체한다. */
@@ -178,7 +185,11 @@ export function Studio({ id }: { id: string }) {
       }
     }
     setError('송출을 다시 연결하지 못했습니다. 네트워크를 확인해 주세요.');
-  }, [cleanup, connect, id, load]);
+  }, [cleanup, connect, id, load, setPhase]);
+
+  useEffect(() => {
+    reconnectRef.current = reconnect;
+  }, [reconnect]);
 
   const end = useCallback(
     async (reason?: string) => {
@@ -251,7 +262,7 @@ export function Studio({ id }: { id: string }) {
   };
 
   /** 연결은 그대로 두고 트랙만 갈아 끼운다. 송출과 녹화가 끊기지 않는다. */
-  const swapCameraTracks = async (facingMode: 'user' | 'environment') => {
+  const swapCameraTracks = useCallback(async (facingMode: 'user' | 'environment') => {
     const cap = capturedRef.current;
     if (!cap) return;
     const fresh = await reacquireCamera(facingMode);
@@ -274,7 +285,7 @@ export function Studio({ id }: { id: string }) {
     };
     capturedRef.current = next;
     setCaptured(next);
-  };
+  }, []);
 
   // 모바일: 다른 앱에 갔다가 30초 안에 돌아오면 장치를 다시 얻어 트랙만 교체한다.
   useEffect(() => {
@@ -303,7 +314,7 @@ export function Studio({ id }: { id: string }) {
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [facing, load, cleanup]);
+  }, [facing, load, cleanup, requestWakeLock, swapCameraTracks]);
 
   // 송출 중에 탭을 닫으려 하면 확인한다. 닫으면 서버가 30초 뒤 방송을 끝낸다.
   useEffect(() => {
@@ -394,11 +405,12 @@ export function Studio({ id }: { id: string }) {
         <div className="flex flex-wrap items-center gap-2">
           {b.status !== 'ENDED' && !onAir && (
             <>
-              <div className="flex rounded-lg bg-surface p-1" role="radiogroup" aria-label="송출 소스">
+              <fieldset className="flex rounded-lg bg-surface p-1">
+                <legend className="sr-only">송출 소스</legend>
                 {screenSupported && (
                   <button
-                    role="radio"
-                    aria-checked={source === 'SCREEN'}
+                    type="button"
+                    aria-pressed={source === 'SCREEN'}
                     onClick={() => setSource('SCREEN')}
                     className={`rounded-md px-3 py-1.5 text-sm ${source === 'SCREEN' ? 'bg-surface-2 font-semibold' : 'text-muted'}`}
                   >
@@ -406,14 +418,14 @@ export function Studio({ id }: { id: string }) {
                   </button>
                 )}
                 <button
-                  role="radio"
-                  aria-checked={source === 'CAMERA'}
+                  type="button"
+                  aria-pressed={source === 'CAMERA'}
                   onClick={() => setSource('CAMERA')}
                   className={`rounded-md px-3 py-1.5 text-sm ${source === 'CAMERA' ? 'bg-surface-2 font-semibold' : 'text-muted'}`}
                 >
                   📱 카메라
                 </button>
-              </div>
+              </fieldset>
               <Button onClick={() => void start()} disabled={busy} data-testid="start-broadcast">
                 {b.status === 'LIVE' ? '송출 다시 연결' : busy ? '준비 중…' : '방송 시작'}
               </Button>

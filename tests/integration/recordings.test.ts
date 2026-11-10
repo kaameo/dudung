@@ -68,7 +68,7 @@ describe('녹화', () => {
     const owner = await h.as('streamer1');
     const id = await endedWithRecording(owner);
     h.storage.failMerges = 1;
-    await expect(processRecording(id, 1)).rejects.toThrow();
+    await expect(processRecording(id, 1)).rejects.toThrow('ffmpeg failed');
     await processRecording(id, 2);
     expect((await recordingOf(owner, id)).status).toBe('READY');
   });
@@ -77,7 +77,7 @@ describe('녹화', () => {
     const owner = await h.as('streamer1');
     const id = await endedWithRecording(owner);
     h.storage.failMerges = 3;
-    for (const attempt of [1, 2, 3]) await expect(processRecording(id, attempt)).rejects.toThrow();
+    for (const attempt of [1, 2, 3]) await expect(processRecording(id, attempt)).rejects.toThrow('ffmpeg failed');
     const rec = await recordingOf(owner, id);
     expect(rec.status).toBe('FAILED');
     expect(await listedBroadcastIds()).not.toContain(id);

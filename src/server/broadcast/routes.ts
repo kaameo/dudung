@@ -54,7 +54,7 @@ export function broadcastRoutes(deps: Deps, service: BroadcastService, hub: Real
     const last = page[page.length - 1];
     return c.json({
       items: page.map((r) => listItem(r.b, r.owner)),
-      nextCursor: rows.length > q.limit && last ? encodeCursor({ r: Number(last.rank), id: last.b.id }) : null,
+      nextCursor: rows.length > q.limit && last ? encodeCursor({ r: last.rank, id: last.b.id }) : null,
     });
   });
 

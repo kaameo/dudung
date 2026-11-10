@@ -12,10 +12,12 @@ export default function RecordingsPage() {
   const [cursor, setCursor] = useState<string | null>(null);
 
   useEffect(() => {
-    api<Page<RecordingItem>>('/api/recordings?limit=24').then((p) => {
-      setItems(p.items);
-      setCursor(p.nextCursor);
-    });
+    api<Page<RecordingItem>>('/api/recordings?limit=24')
+      .then((p) => {
+        setItems(p.items);
+        setCursor(p.nextCursor);
+      })
+      .catch(() => setItems([]));
   }, []);
 
   const more = async () => {

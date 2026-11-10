@@ -15,7 +15,7 @@ async function startCameraBroadcast(streamer: Page, title: string) {
   await streamer.getByRole('button', { name: '등록하고 스튜디오로' }).click();
   await streamer.waitForURL(/\/studio$/);
   const id = streamer.url().split('/').at(-2)!;
-  await streamer.getByRole('radio', { name: /카메라/ }).click();
+  await streamer.getByRole('button', { name: /카메라/ }).click();
   const startRes = streamer.waitForResponse((r) => r.url().endsWith(`/api/broadcasts/${id}/start`));
   await streamer.getByTestId('start-broadcast').click();
   const { token } = await (await startRes).json();
@@ -60,12 +60,12 @@ test('종료 후 같은 송출 토큰으로 WHIP 재송출은 거절된다', asy
   await expect(streamer.getByText('종료된 방송입니다.')).toBeVisible();
 
   const status = await streamer.evaluate(
-    async ({ id, token }) => {
+    async (args) => {
       const pc = new RTCPeerConnection();
       pc.addTransceiver('video', { direction: 'sendonly' });
       pc.addTransceiver('audio', { direction: 'sendonly' });
       await pc.setLocalDescription(await pc.createOffer());
-      const res = await fetch(`/media/live/${id}/whip?token=${encodeURIComponent(token)}`, {
+      const res = await fetch(`/media/live/${args.id}/whip?token=${encodeURIComponent(args.token)}`, {
         method: 'POST',
         headers: { 'content-type': 'application/sdp' },
         body: pc.localDescription!.sdp,

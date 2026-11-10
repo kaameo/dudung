@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { playWhep, SignalingError, type Playback } from '@/lib/client/webrtc';
 
 /**
@@ -18,8 +18,9 @@ export function LivePlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
   const [state, setState] = useState<'connecting' | 'playing' | 'waiting'>('connecting');
-  const checkRef = useRef(checkLive);
-  checkRef.current = checkLive;
+  // 부모가 렌더마다 새 함수를 넘겨도 연결을 다시 맺지 않는다.
+  const stillLive = useEffectEvent(() => checkLive().catch(() => true));
+  const checkLiveOrFalse = useEffectEvent(() => checkLive().catch(() => false));
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +35,7 @@ export function LivePlayer({
       clearTimeout(timer);
       timer = setTimeout(async () => {
         if (cancelled) return;
-        if (await checkRef.current().catch(() => true)) void connect();
+        if (await stillLive()) void connect();
       }, 3000);
     };
 
@@ -60,7 +61,7 @@ export function LivePlayer({
         });
       } catch (err) {
         // 404: 아직 송출이 붙지 않았다. 401: 방송이 LIVE 가 아니다.
-        if (err instanceof SignalingError && err.status === 401 && !(await checkRef.current().catch(() => false))) return;
+        if (err instanceof SignalingError && err.status === 401 && !(await checkLiveOrFalse())) return;
         retryLater();
       }
     };

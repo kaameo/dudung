@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import type { TossPaymentsWidgets } from '@tosspayments/tosspayments-sdk';
 import { useEffect, useRef, useState } from 'react';
 import { api, errorMessage } from '@/lib/client/api';
 import type { DonationItem, Page, UserRef } from '@/lib/client/types';
@@ -43,7 +44,14 @@ function DonateModal({ broadcastId, recipient, onClose }: { broadcastId: string;
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const widgetsRef = useRef<any>(null);
+  const widgetsRef = useRef<TossPaymentsWidgets | null>(null);
+
+  // Esc 로 닫는다.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const createOrder = async () => {
     setBusy(true);
@@ -60,7 +68,7 @@ function DonateModal({ broadcastId, recipient, onClose }: { broadcastId: string;
   useEffect(() => {
     if (!order) return;
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const { loadTossPayments } = await import('@tosspayments/tosspayments-sdk');
         const toss = await loadTossPayments(order.clientKey);
@@ -98,9 +106,14 @@ function DonateModal({ broadcastId, recipient, onClose }: { broadcastId: string;
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={onClose}>
-      <Card className="max-h-[90dvh] w-full max-w-md overflow-y-auto p-5" >
-        <div onClick={(e) => e.stopPropagation()} className="space-y-4">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
+      <dialog
+        open
+        aria-modal="true"
+        aria-label="후원하기"
+        className="static m-0 max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-xl border border-line bg-surface p-5 text-fg"
+      >
+        <div className="space-y-4">
           <div className="text-center">
             <p className="text-xs text-muted">받는 사람</p>
             <p className="text-2xl font-black text-accent" data-testid="donation-recipient">
@@ -153,18 +166,19 @@ function DonateModal({ broadcastId, recipient, onClose }: { broadcastId: string;
             </>
           )}
         </div>
-      </Card>
+      </dialog>
     </div>
   );
 }
 
-export function DonationList({ broadcastId, version }: { broadcastId: string; version: number }) {
+/** 후원 내역과 합계. 새 후원이 오면 부모가 key 를 바꿔 다시 불러온다. */
+export function DonationList({ broadcastId }: { broadcastId: string }) {
   const [data, setData] = useState<(Page<DonationItem> & { total: number }) | null>(null);
   useEffect(() => {
     api<Page<DonationItem> & { total: number }>(`/api/broadcasts/${broadcastId}/donations?limit=20`)
       .then(setData)
       .catch(() => {});
-  }, [broadcastId, version]);
+  }, [broadcastId]);
   if (!data) return null;
   return (
     <Card className="p-4">

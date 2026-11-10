@@ -1,19 +1,26 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useEffectEvent } from 'react';
+import type { BroadcastDetail, CommentItem, DonationItem } from './types';
 
-export interface BroadcastEventHandlers {
-  'comment.created'?: (data: any) => void;
-  'comment.updated'?: (data: any) => void;
-  'comment.deleted'?: (data: { id: string }) => void;
-  'donation.created'?: (data: any) => void;
-  'broadcast.updated'?: (data: any) => void;
-  'broadcast.ended'?: (data: { id: string; reason: string }) => void;
-  viewers?: (data: { count: number }) => void;
-  /** 끊겼다가 다시 연결됐을 때. 빠진 댓글을 목록 API 로 보정한다. */
-  reconnected?: () => void;
+/** 서버가 보내는 방송별 이벤트와 그 내용. */
+export interface BroadcastEvents {
+  'comment.created': CommentItem;
+  'comment.updated': CommentItem;
+  'comment.deleted': { id: string };
+  'donation.created': DonationItem;
+  'broadcast.updated': Partial<BroadcastDetail> & { id: string };
+  'broadcast.ended': { id: string; reason: string };
+  viewers: { count: number };
 }
 
-const EVENTS = [
+type EventName = keyof BroadcastEvents;
+
+export type BroadcastEventHandlers = { [K in EventName]?: (data: BroadcastEvents[K]) => void } & {
+  /** 끊겼다가 다시 연결됐을 때. 빠진 댓글을 목록 API 로 보정한다. */
+  reconnected?: () => void;
+};
+
+const EVENTS: EventName[] = [
   'comment.created',
   'comment.updated',
   'comment.deleted',
@@ -21,28 +28,31 @@ const EVENTS = [
   'broadcast.updated',
   'broadcast.ended',
   'viewers',
-] as const;
+];
 
 /** 방송별 SSE 구독. EventSource 가 끊기면 브라우저가 알아서 다시 연결한다. */
 export function useBroadcastEvents(broadcastId: string | null, handlers: BroadcastEventHandlers) {
-  const ref = useRef(handlers);
-  ref.current = handlers;
+  // 핸들러가 렌더마다 바뀌어도 연결을 다시 맺지 않고 최신 핸들러를 부른다.
+  const dispatch = useEffectEvent(<K extends EventName>(name: K, data: BroadcastEvents[K]) => {
+    (handlers[name] as ((d: BroadcastEvents[K]) => void) | undefined)?.(data);
+  });
+  const onReconnected = useEffectEvent(() => handlers.reconnected?.());
 
   useEffect(() => {
     if (!broadcastId) return;
     const es = new EventSource(`/api/broadcasts/${broadcastId}/events`);
     let hadError = false;
-    es.onopen = () => {
-      if (hadError) ref.current.reconnected?.();
+    es.addEventListener('open', () => {
+      if (hadError) onReconnected();
       hadError = false;
-    };
-    es.onerror = () => {
+    });
+    es.addEventListener('error', () => {
       hadError = true;
-    };
+    });
     for (const name of EVENTS) {
       es.addEventListener(name, (e) => {
         try {
-          (ref.current[name] as ((d: unknown) => void) | undefined)?.(JSON.parse((e as MessageEvent).data));
+          dispatch(name, JSON.parse((e as MessageEvent<string>).data));
         } catch {
           /* 잘못된 이벤트는 버린다. */
         }

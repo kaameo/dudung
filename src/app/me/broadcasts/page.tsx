@@ -15,10 +15,12 @@ export default function MyBroadcastsPage() {
 
   useEffect(() => {
     if (!user) return;
-    api<Page<BroadcastItem>>('/api/me/broadcasts?limit=30').then((p) => {
-      setItems(p.items);
-      setCursor(p.nextCursor);
-    });
+    api<Page<BroadcastItem>>('/api/me/broadcasts?limit=30')
+      .then((p) => {
+        setItems(p.items);
+        setCursor(p.nextCursor);
+      })
+      .catch(() => setItems([]));
   }, [user]);
 
   const more = async () => {

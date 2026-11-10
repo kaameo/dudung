@@ -49,7 +49,7 @@ export class FfmpegRecordingStorage implements RecordingStorage {
     const dir = path.join(this.recordingsDir, input.pathName);
     const segments = (await readdir(dir).catch(() => [] as string[]))
       .filter((f) => f.endsWith('.mp4'))
-      .sort()
+      .toSorted()
       .map((f) => path.join(dir, f));
     if (segments.length === 0) throw new Error(`no recording segments in ${dir}`);
 

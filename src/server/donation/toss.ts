@@ -22,7 +22,9 @@ export class TossPaymentsClient implements PaymentGateway {
     });
     const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok) {
-      throw new TossError(res.status, String(json.code ?? 'UNKNOWN'), String(json.message ?? `toss ${res.status}`));
+      const code = typeof json.code === 'string' ? json.code : 'UNKNOWN';
+      const message = typeof json.message === 'string' ? json.message : `toss ${res.status}`;
+      throw new TossError(res.status, code, message);
     }
     return {
       paymentKey: String(json.paymentKey),

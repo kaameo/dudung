@@ -141,7 +141,7 @@ export function WatchView({ id, donationsEnabled }: { id: string; donationsEnabl
           </div>
         </div>
         {b.description && <p className="whitespace-pre-wrap text-sm text-muted">{b.description}</p>}
-        {b.status !== 'READY' && <DonationList broadcastId={b.id} version={donationVersion} />}
+        {b.status !== 'READY' && <DonationList key={donationVersion} broadcastId={b.id} />}
       </div>
       <CommentsPanel ref={comments} broadcastId={b.id} className="h-[480px] lg:h-[calc(100dvh-8rem)]" />
     </div>

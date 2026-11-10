@@ -20,7 +20,7 @@ const TEST_ACCOUNTS = [
  * 브라우저는 백슬래시를 '/' 처럼 해석하므로(예: '/' + 백슬래시 + 'evil.com' → //evil.com) 문자열 검사 대신 URL 로 풀어서 출처를 비교한다.
  */
 function safeNext(next: string | undefined): string {
-  if (!next || /[\\\u0000-\u001f]/.test(next)) return '/';
+  if (!next || /[\\\p{Cc}]/u.test(next)) return '/';
   try {
     const url = new URL(next, window.location.origin);
     return url.origin === window.location.origin ? `${url.pathname}${url.search}${url.hash}` : '/';

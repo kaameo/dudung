@@ -44,7 +44,7 @@ export function toProblem(err: AppError): Problem {
     title: err.message,
     status: err.status,
     code: err.code,
-    ...(err.extra ?? {}),
+    ...err.extra,
   };
 }
 
