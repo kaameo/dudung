@@ -54,11 +54,14 @@
         ]
       }
     ],
+    // 재시도, 페이지 순회, 정합성 정리처럼 순서가 중요한 반복을 일부러 순차로 돈다.
     "eslint/no-await-in-loop": "off",
+    // 토스·MediaMTX·API 응답 JSON 을 타입으로 받는 곳이 많아 경고가 소음이 된다.
     "typescript/no-unsafe-type-assertion": "off",
     "unicorn/consistent-function-scoping": "off",
     "eslint/no-underscore-dangle": "off",
     "promise/always-return": "off",
+    // useEffect 가 조건에 따라 정리 함수를 돌려주는 흔한 패턴을 막는다.
     "typescript/consistent-return": "off",
     "import/no-unassigned-import": [
       "warn",
@@ -78,7 +81,9 @@
         "depth": 3
       }
     ],
+    // 라이브 영상과 다시보기에는 자막 트랙이 없다.
     "jsx-a11y/media-has-caption": "off",
+    // 비동기 로더(await 뒤 setState)를 동기 setState 로 오인한다.
     "react/set-state-in-effect": "off"
   },
   "overrides": [
