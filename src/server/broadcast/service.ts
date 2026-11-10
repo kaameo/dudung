@@ -176,11 +176,12 @@ export function createBroadcastService(deps: Deps) {
         .where(and(eq(broadcasts.id, id), isNull(broadcasts.deletedAt)))
         .returning();
       if (!b) throw notFound('BROADCAST_NOT_FOUND', '방송을 찾을 수 없습니다.');
+      // SSE 는 누구나 구독하므로 READY 방송은 대기 화면과 같은 정보(설명 제외)만 보낸다.
       await publishEvent(deps, id, 'broadcast.updated', {
         id,
         title: b.title,
-        description: b.description,
         status: b.status,
+        ...(b.status === 'READY' ? {} : { description: b.description }),
       });
       return fullView(b, owner, userId);
     },

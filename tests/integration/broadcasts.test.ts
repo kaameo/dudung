@@ -261,6 +261,17 @@ describe('공개 목록과 상세', () => {
     expect(res.body.broadcast.viewerCount).toBe(3);
   });
 
+  it('READY 방송의 수정 알림에는 비공개 설명을 싣지 않는다', async () => {
+    const owner = await h.as('streamer1');
+    const b = await register(owner, '예고', '공개 전 메모');
+    const waiting = await openEvents(h, b.id);
+    await owner.patch(`/api/broadcasts/${b.id}`, { title: '새 예고', description: '여전히 비공개' });
+    const e = await waiting.next('broadcast.updated');
+    waiting.close();
+    expect(e).toMatchObject({ id: b.id, title: '새 예고', status: 'READY' });
+    expect(e.description).toBeUndefined();
+  });
+
   it('LIVE 중 제목을 바꾸면 시청 화면에 broadcast.updated 로 알린다', async () => {
     const owner = await h.as('streamer1');
     const b = await goLive(owner);

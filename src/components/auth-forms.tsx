@@ -15,7 +15,19 @@ const TEST_ACCOUNTS = [
   { account: 'viewer2', label: '시청자 2' },
 ] as const;
 
-const safeNext = (next: string | undefined) => (next && next.startsWith('/') && !next.startsWith('//') ? next : '/');
+/**
+ * 로그인 뒤 돌아갈 주소. 같은 출처의 경로만 허용한다.
+ * 브라우저는 백슬래시를 '/' 처럼 해석하므로(예: '/' + 백슬래시 + 'evil.com' → //evil.com) 문자열 검사 대신 URL 로 풀어서 출처를 비교한다.
+ */
+function safeNext(next: string | undefined): string {
+  if (!next || /[\\\u0000-\u001f]/.test(next)) return '/';
+  try {
+    const url = new URL(next, window.location.origin);
+    return url.origin === window.location.origin ? `${url.pathname}${url.search}${url.hash}` : '/';
+  } catch {
+    return '/';
+  }
+}
 
 export function LoginForm({ next, testLoginEnabled }: { next?: string; testLoginEnabled: boolean }) {
   const router = useRouter();
