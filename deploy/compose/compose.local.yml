@@ -1,0 +1,113 @@
+# 로컬: `docker compose -f deploy/compose/compose.local.yml up --build` 하나로 전체 스택을 띄운다.
+# 도메인·클라우드 계정 없이 http://localhost 에서 동작한다(R2 대신 SeaweedFS S3).
+name: dudung-local
+
+x-app: &app
+  build:
+    context: ../..
+  image: dudung:local
+  restart: unless-stopped
+  environment: &app-env
+    APP_URL: http://localhost
+    DATABASE_URL: postgres://dudung:dudung@postgres:5432/dudung
+    REDIS_URL: redis://redis:6379/0
+    JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?run scripts/gen-keys.sh > deploy/compose/.env first}
+    JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+    INTERNAL_SECRET: local-internal-secret-change-me
+    MEDIAMTX_API_URL: http://mediamtx:9997
+    RECORDINGS_DIR: /recordings
+    S3_ENDPOINT: http://s3:8333
+    S3_PUBLIC_ENDPOINT: http://localhost:8333
+    S3_REGION: us-east-1
+    S3_BUCKET: dudung
+    S3_ACCESS_KEY_ID: local
+    S3_SECRET_ACCESS_KEY: local-secret
+    S3_FORCE_PATH_STYLE: 'true'
+    S3_CREATE_BUCKET: 'true'
+    TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY:-}
+    TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-}
+    TEST_LOGIN_ENABLED: 'true'
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment: { POSTGRES_USER: dudung, POSTGRES_PASSWORD: dudung, POSTGRES_DB: dudung }
+    ports: ['127.0.0.1:5432:5432']
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U dudung -d dudung']
+      interval: 3s
+      retries: 30
+
+  redis:
+    image: redis:7.4-alpine
+    ports: ['127.0.0.1:6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 3s
+      retries: 30
+
+  # R2 대신 S3 호환 저장소(SeaweedFS). 로컬에서는 인증 없이 열어 둔다.
+  s3:
+    image: chrislusf/seaweedfs:4.53
+    command: ['server', '-dir=/data', '-s3', '-s3.port=8333', '-master.volumeSizeLimitMB=512']
+    ports: ['127.0.0.1:8333:8333']
+    volumes: [s3data:/data]
+
+  migrate:
+    <<: *app
+    restart: 'no'
+    command: ['sh', '-c', 'node dist/scripts/migrate.mjs && node dist/scripts/seed.mjs']
+    depends_on:
+      postgres: { condition: service_healthy }
+      s3: { condition: service_started }
+
+  app:
+    <<: *app
+    command: ['node_modules/.bin/next', 'start', '-H', '0.0.0.0', '-p', '3000']
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  worker:
+    <<: *app
+    command: ['node', 'dist/worker/index.mjs']
+    user: '0:0'
+    environment:
+      <<: *app-env
+      SERVICE_NAME: worker
+    volumes: [recordings:/recordings]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.3-ffmpeg
+    environment:
+      MTX_AUTHHTTPADDRESS: http://app:3000/internal/media/auth?secret=local-internal-secret-change-me
+      MTX_APIADDRESS: :9997
+      MTX_WEBRTCADDRESS: :8889
+      MTX_WEBRTCTRUSTEDPROXIES: 0.0.0.0/0
+      # 브라우저가 들어올 호스트 주소. 크롬은 loopback(127.0.0.1) 후보로는 연결하지 않으므로 PC 의 LAN IP 를 알린다.
+      #   echo "MEDIA_HOST_IP=$(ipconfig getifaddr en0)" >> deploy/compose/.env   (macOS)
+      #   echo "MEDIA_HOST_IP=$(hostname -I | cut -d' ' -f1)" >> deploy/compose/.env   (Linux)
+      MTX_WEBRTCADDITIONALHOSTS: ${MEDIA_HOST_IP:?set MEDIA_HOST_IP (your LAN IP) in deploy/compose/.env}
+      MTX_WEBRTCIPSFROMINTERFACES: 'no'
+      MTX_LOGLEVEL: ${MTX_LOGLEVEL:-info}
+      INTERNAL_SECRET: local-internal-secret-change-me
+      APP_INTERNAL_URL: http://app:3000
+    ports: ['8189:8189/udp', '8189:8189/tcp']
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+      - recordings:/recordings
+
+  caddy:
+    image: caddy:2.10-alpine
+    ports: ['127.0.0.1:80:80']
+    volumes: [./Caddyfile.local:/etc/caddy/Caddyfile:ro]
+    depends_on: [app, mediamtx]
+
+volumes:
+  pgdata:
+  s3data:
+  recordings:

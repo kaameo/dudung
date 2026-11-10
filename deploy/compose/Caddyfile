@@ -1,0 +1,38 @@
+# 운영: DuckDNS 도메인 하나. Let's Encrypt 인증서를 자동으로 받는다.
+{$DOMAIN} {
+	# 내부 훅 경로는 외부 요청에 404.
+	@internal path /internal/*
+	respond @internal 404
+
+	# WHIP/WHEP 요청(세션 PATCH·DELETE 포함)만 MediaMTX 로 넘긴다. 영상 패킷은 8189 로 브라우저와 MediaMTX 가 직접 주고받는다.
+	# 그 밖의 /media/* 는 404.
+	@signaling path_regexp ^/media/live/[0-9a-fA-F-]{36}/(whip|whep)(/[0-9a-fA-F-]+)?$
+	handle @signaling {
+		uri strip_prefix /media
+		reverse_proxy 127.0.0.1:8889 {
+			# MediaMTX 가 돌려주는 세션 주소(/live/...)에 프록시 접두사를 붙인다.
+			header_down Location ^/ /media/
+			# MediaMTX 의 401 에 붙는 Basic 인증 요청을 지운다. 남겨 두면 브라우저가 로그인 창을 띄운다.
+			header_down -WWW-Authenticate
+		}
+	}
+	handle /media/* {
+		respond 404
+	}
+
+	handle {
+		encode {
+			gzip
+			match {
+				header Content-Type text/html*
+				header Content-Type text/css*
+				header Content-Type application/javascript*
+				header Content-Type application/json*
+			}
+		}
+		# text/event-stream 은 버퍼링 없이 바로 흘려보낸다.
+		reverse_proxy 127.0.0.1:3000 {
+			flush_interval -1
+		}
+	}
+}

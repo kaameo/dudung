@@ -1,0 +1,53 @@
+# MediaMTX 1.21.3 설정. 운영(host 네트워크)과 로컬(compose.local.yml)이 같이 쓰고, 다른 값은 MTX_* 환경변수로 덮어쓴다.
+# 키 이름은 v1.21.3 기본 설정 파일(mediamtx.yml)과 OpenAPI 문서로 확인했다.
+logLevel: info
+logDestinations: [stdout]
+
+# 송출·시청 요청마다 앱에 허용 여부를 묻는다. 헤더를 붙일 수 없어서 공유 비밀키는 쿼리로 보낸다(MTX_AUTHHTTPADDRESS).
+authMethod: http
+authHTTPAddress: http://127.0.0.1:3000/internal/media/auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+
+# Control API: 127.0.0.1 에서만 열어 두고 인증에서 뺀다. 앱·워커만 쓴다.
+api: yes
+apiAddress: 127.0.0.1:9997
+
+# 쓰지 않는 프로토콜은 끈다.
+rtsp: no
+rtmp: no
+hls: no
+srt: no
+moq: no
+playback: no
+
+# WebRTC: HTTP(WHIP/WHEP)는 Caddy 만 접근, 미디어는 UDP·TCP 8189 로 직접 주고받는다.
+webrtc: yes
+webrtcAddress: 127.0.0.1:8889
+webrtcTrustedProxies: [127.0.0.1]
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcIPsFromInterfaces: yes
+# Oracle 은 사설 IP 에 공인 IP 가 1:1 NAT 로 붙어 있어서 공인 IP 를 추가로 알린다(MTX_WEBRTCADDITIONALHOSTS).
+webrtcAdditionalHosts: []
+
+pathDefaults:
+  # 서버에서 녹화한다. 송출이 재접속해도 같은 경로에 조각이 이어서 쌓이고, 종료 후 워커가 하나로 합친다.
+  record: yes
+  recordFormat: fmp4
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f_%z
+  recordSegmentDuration: 10m
+  # 워커가 실패했을 때의 안전장치.
+  recordDeleteAfter: 48h
+  # 재연결한 송출이 이전 송출을 대체한다.
+  overridePublisher: yes
+  # 송출 시작·끊김을 앱에 알린다. $MTX_PATH 는 MediaMTX 가, 나머지는 sh 가 컨테이너 환경변수로 바꾼다.
+  runOnOnline: >-
+    sh -c 'wget -qO- --post-data "" --header "X-Internal-Secret: $INTERNAL_SECRET" "$APP_INTERNAL_URL/internal/media/ready?path=$MTX_PATH"'
+  runOnOffline: >-
+    sh -c 'wget -qO- --post-data "" --header "X-Internal-Secret: $INTERNAL_SECRET" "$APP_INTERNAL_URL/internal/media/not-ready?path=$MTX_PATH"'
+
+paths:
+  "~^live/[0-9a-f-]{36}$": {}

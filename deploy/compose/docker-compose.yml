@@ -1,0 +1,107 @@
+# 운영: Oracle Cloud Always Free ARM 1 OCPU / 8GB 서버 한 대.
+# 사용법: 이 디렉터리에 .env 를 두고 `docker compose pull && docker compose up -d`.
+name: dudung
+
+x-app: &app
+  image: ${APP_IMAGE:-ghcr.io/kaameo/dudung:latest}
+  env_file: .env
+  # MediaMTX(host 네트워크)의 훅이 127.0.0.1:3000 으로 앱을 부르고, 앱이 127.0.0.1:9997 Control API 를 부른다.
+  network_mode: host
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: '3' }
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dudung
+      POSTGRES_DB: dudung
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    ports: ['127.0.0.1:5432:5432']
+    volumes: [pgdata:/var/lib/postgresql/data]
+    mem_limit: 1g
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U dudung -d dudung']
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory', '200mb', '--maxmemory-policy', 'noeviction']
+    ports: ['127.0.0.1:6379:6379']
+    volumes: [redisdata:/data]
+    mem_limit: 256m
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      retries: 20
+
+  # 앱 시작 전에 한 번 실행한다: 마이그레이션 → 고정 계정·demo seed.
+  migrate:
+    <<: *app
+    restart: 'no'
+    command: ['sh', '-c', 'node dist/scripts/migrate.mjs && node dist/scripts/seed.mjs']
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  app:
+    <<: *app
+    command: ['node_modules/.bin/next', 'start', '-H', '127.0.0.1', '-p', '3000']
+    mem_limit: 1g
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      retries: 5
+
+  worker:
+    <<: *app
+    command: ['node', 'dist/worker/index.mjs']
+    # MediaMTX(root)가 만든 녹화 조각을 합친 뒤 지워야 한다.
+    user: '0:0'
+    environment:
+      SERVICE_NAME: worker
+    volumes: [recordings:/recordings]
+    mem_limit: 512m
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.3-ffmpeg
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      MTX_AUTHHTTPADDRESS: http://127.0.0.1:3000/internal/media/auth?secret=${INTERNAL_SECRET}
+      MTX_WEBRTCADDITIONALHOSTS: ${MEDIAMTX_PUBLIC_IP:?MEDIAMTX_PUBLIC_IP is required}
+      INTERNAL_SECRET: ${INTERNAL_SECRET}
+      APP_INTERNAL_URL: http://127.0.0.1:3000
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+      - recordings:/recordings
+    mem_limit: 256m
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 128m
+
+volumes:
+  pgdata:
+  redisdata:
+  recordings:
+  caddy_data:
+  caddy_config:

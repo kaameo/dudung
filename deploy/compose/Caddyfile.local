@@ -1,0 +1,26 @@
+# 로컬: http://localhost (브라우저가 보안 컨텍스트로 취급해서 화면공유·카메라가 동작한다).
+:80 {
+	@internal path /internal/*
+	respond @internal 404
+
+	# WHIP/WHEP 요청(세션 PATCH·DELETE 포함)만 MediaMTX 로 넘긴다. 그 밖의 /media/* 는 404.
+	@signaling path_regexp ^/media/live/[0-9a-fA-F-]{36}/(whip|whep)(/[0-9a-fA-F-]+)?$
+	handle @signaling {
+		uri strip_prefix /media
+		reverse_proxy mediamtx:8889 {
+			# MediaMTX 가 돌려주는 세션 주소(/live/...)에 프록시 접두사를 붙인다.
+			header_down Location ^/ /media/
+			# MediaMTX 의 401 에 붙는 Basic 인증 요청을 지운다. 남겨 두면 브라우저가 로그인 창을 띄운다.
+			header_down -WWW-Authenticate
+		}
+	}
+	handle /media/* {
+		respond 404
+	}
+
+	handle {
+		reverse_proxy app:3000 {
+			flush_interval -1
+		}
+	}
+}
