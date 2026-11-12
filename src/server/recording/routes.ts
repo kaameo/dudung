@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { decodeCursor, encodeCursor, pageQuery, parseWith, uuidParam, type AppEnv } from '@/server/http';
+import { decodeCursor, encodeCursor, pageQuery, parseWith, requireUser, uuidParam, type AppEnv } from '@/server/http';
 import type { RecordingService } from './service';
 
 export function recordingRoutes(service: RecordingService) {
@@ -16,6 +16,13 @@ export function recordingRoutes(service: RecordingService) {
   app.get('/recordings/:id', async (c) => {
     const id = parseWith(uuidParam, c.req.param('id'));
     return c.json({ recording: await service.detail(id) });
+  });
+
+  app.delete('/recordings/:id', async (c) => {
+    const user = requireUser(c);
+    const id = parseWith(uuidParam, c.req.param('id'));
+    await service.remove(id, user.id);
+    return c.body(null, 204);
   });
 
   return app;

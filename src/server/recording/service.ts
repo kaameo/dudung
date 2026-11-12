@@ -1,5 +1,5 @@
-import { and, asc, desc, eq, isNull, lt, ne, sql } from 'drizzle-orm';
-import { notFound } from '@/server/common/errors';
+import { and, asc, desc, eq, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
+import { conflict, forbidden, notFound } from '@/server/common/errors';
 import { broadcasts, recordings, users } from '@/server/db/schema';
 import type { Deps } from '@/server/ports';
 import { DEMO_USER_ID } from '@/server/seed';
@@ -133,6 +133,33 @@ export function createRecordingService(deps: Deps) {
         .limit(limit + 1);
       const page = rows.slice(0, limit);
       return { items: page.map(view), nextId: rows.length > limit ? page[page.length - 1]!.id : null };
+    },
+
+    /**
+     * 방송 소유자가 다시보기를 지운다. 처리가 끝난(READY·FAILED) 녹화만 지울 수 있다.
+     * 행을 먼저 지운 뒤 저장소 객체를 지운다. 객체 삭제가 실패해도 화면에는 다시 나타나지 않는다.
+     */
+    async remove(id: string, userId: string) {
+      const [row] = await db
+        .select({ status: recordings.status, ownerId: broadcasts.ownerId })
+        .from(recordings)
+        .innerJoin(broadcasts, eq(broadcasts.id, recordings.broadcastId))
+        .where(and(eq(recordings.id, id), isNull(broadcasts.deletedAt)));
+      if (!row) throw notFound('RECORDING_NOT_FOUND', '다시보기를 찾을 수 없습니다.');
+      if (row.ownerId !== userId) throw forbidden('RECORDING_NOT_OWNER', '방송 소유자만 다시보기를 지울 수 있습니다.');
+      const [deleted] = await db
+        .delete(recordings)
+        .where(and(eq(recordings.id, id), inArray(recordings.status, ['READY', 'FAILED'])))
+        .returning();
+      if (!deleted) throw conflict('RECORDING_IN_PROGRESS', '녹화를 처리하는 중이라 지금은 지울 수 없습니다.');
+      if (deleted.s3Key) {
+        try {
+          await storage.deleteObject(deleted.s3Key);
+        } catch (err) {
+          log.error({ err, key: deleted.s3Key }, 'failed to delete recording object; orphan left in storage');
+        }
+      }
+      log.info({ recordingId: id, broadcastId: deleted.broadcastId }, 'recording deleted by owner');
     },
 
     async detail(id: string) {

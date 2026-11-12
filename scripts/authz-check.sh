@@ -75,6 +75,9 @@ row '댓글 수정'           401,403,200 "req anon PATCH /api/comments/$C1 '{\"
 row '후원 요청'           '401,201|503,403' "req anon POST /api/broadcasts/$B1/donations '{\"amount\":1000}'" "req other POST /api/broadcasts/$B1/donations '{\"amount\":1000}'" "req owner POST /api/broadcasts/$B1/donations '{\"amount\":1000}'"
 row '후원 내역·합계'      200,200,200 "req anon GET /api/broadcasts/$B1/donations" "req other GET /api/broadcasts/$B1/donations" "req owner GET /api/broadcasts/$B1/donations"
 row '녹화 목록'           200,200,200 "req anon GET /api/recordings" "req other GET /api/recordings" "req owner GET /api/recordings"
+# 실제 녹화를 curl 로 만들 수 없어서 demo 녹화(누구의 것도 아님)로 거절만 확인한다. 소유자 허용은 통합 테스트가 확인한다.
+DEMO_REC=01930000-0000-7000-8000-00000000a001
+row '녹화 삭제(남의 녹화)'  401,403,403 "req anon DELETE /api/recordings/$DEMO_REC" "req other DELETE /api/recordings/$DEMO_REC" "req owner DELETE /api/recordings/$DEMO_REC"
 row '방송 종료'           401,403,200 "req anon POST /api/broadcasts/$B1/end" "req other POST /api/broadcasts/$B1/end" "req owner POST /api/broadcasts/$B1/end"
 row '댓글 삭제'           401,403,204 "req anon DELETE /api/comments/$C1" "req other DELETE /api/comments/$C1" "req owner DELETE /api/comments/$C1"
 row '방송 삭제'           401,403,204 "req anon DELETE /api/broadcasts/$B2" "req other DELETE /api/broadcasts/$B2" "req owner DELETE /api/broadcasts/$B2"

@@ -1,10 +1,12 @@
 'use client';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError } from '@/lib/client/api';
+import { api, ApiError, errorMessage } from '@/lib/client/api';
 import type { RecordingItem } from '@/lib/client/types';
+import { useAuth } from './auth-provider';
 import { formatDuration } from './broadcast-card';
-import { Button, Card } from './ui';
+import { Button, Card, Notice } from './ui';
 
 type Detail = RecordingItem & { description: string | null; playbackUrl: string };
 
@@ -12,7 +14,11 @@ type Detail = RecordingItem & { description: string | null; playbackUrl: string 
 export function RecordingView({ id }: { id: string }) {
   const [r, setR] = useState<Detail | null>(null);
   const [missing, setMissing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const router = useRouter();
+  const { user } = useAuth();
 
   const load = useCallback(async () => {
     try {
@@ -32,6 +38,20 @@ export function RecordingView({ id }: { id: string }) {
     requestAnimationFrame(() => {
       if (videoRef.current) videoRef.current.currentTime = at;
     });
+  };
+
+  /** 방송 소유자만 보이는 버튼. 권한은 서버가 다시 확인한다. */
+  const remove = async () => {
+    if (!confirm('이 다시보기를 삭제할까요? 녹화 파일도 함께 지워지고 되돌릴 수 없습니다.')) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await api(`/api/recordings/${id}`, { method: 'DELETE' });
+      router.replace('/recordings');
+    } catch (err) {
+      setError(errorMessage(err));
+      setDeleting(false);
+    }
   };
 
   if (missing) return <Card className="p-10 text-center">다시보기를 찾을 수 없습니다.</Card>;
@@ -58,10 +78,18 @@ export function RecordingView({ id }: { id: string }) {
             · {formatDuration(r.durationSec)} · {r.startedAt ? new Date(r.startedAt).toLocaleString('ko-KR') : ''}
           </p>
         </div>
-        <Link href={`/broadcasts/${r.broadcastId}`}>
-          <Button variant="secondary">방송 페이지</Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href={`/broadcasts/${r.broadcastId}`}>
+            <Button variant="secondary">방송 페이지</Button>
+          </Link>
+          {user?.id === r.owner.id && (
+            <Button variant="danger" disabled={deleting} onClick={() => void remove()} data-testid="delete-recording">
+              삭제
+            </Button>
+          )}
+        </div>
       </div>
+      {error && <Notice tone="error">{error}</Notice>}
       {r.description && <p className="whitespace-pre-wrap text-sm text-muted">{r.description}</p>}
     </div>
   );

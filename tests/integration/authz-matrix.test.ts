@@ -64,6 +64,19 @@ const rows: Array<[string, Cell, Record<Who, number>]> = [
   ['MediaMTX 시청(WHEP)', (w) => h.hook('/internal/media/auth', { action: 'read', path: `live/${w.live}` }).then((r) => r.status), { anon: 200, other: 200, owner: 200 }],
   ['녹화 목록', (_w, a) => a.get('/api/recordings').then((r) => r.status), { anon: 200, other: 200, owner: 200 }],
   ['녹화 재생', (_w, a) => a.get(`/api/recordings/${DEMO_RECORDING_ID}`).then((r) => r.status), { anon: 200, other: 200, owner: 200 }],
+  [
+    '녹화 삭제',
+    async (w, a) => {
+      // 소유자의 LIVE 방송을 송출 → 종료 → 녹화 처리까지 진행해 READY 녹화를 만든다.
+      h.media.setPublishing(`live/${w.live}`, true);
+      await h.hook(`/internal/media/ready?path=live/${w.live}`);
+      await w.owner.post(`/api/broadcasts/${w.live}/end`);
+      await h.handlers.processRecording({ broadcastId: w.live }, { attempt: 1, maxAttempts: 3 });
+      const rec = (await w.owner.get(`/api/broadcasts/${w.live}`)).body.broadcast.recording;
+      return (await a.del(`/api/recordings/${rec.id}`)).status;
+    },
+    { anon: 401, other: 403, owner: 204 },
+  ],
   ['댓글 조회', (w, a) => a.get(`/api/broadcasts/${w.live}/comments`).then((r) => r.status), { anon: 200, other: 200, owner: 200 }],
   ['댓글 작성', (w, a) => a.post(`/api/broadcasts/${w.live}/comments`, { body: '안녕' }).then((r) => r.status), { anon: 401, other: 201, owner: 201 }],
   ['댓글 수정', (w, a) => a.patch(`/api/comments/${w.commentId}`, { body: '수정' }).then((r) => r.status), { anon: 401, other: 403, owner: 200 }],

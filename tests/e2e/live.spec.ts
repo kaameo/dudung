@@ -105,4 +105,15 @@ test('녹화가 READY 가 되면 다시보기에서 재생된다', async ({ brow
       timeout: 30_000,
     })
     .toBe(true);
+
+  // 방송 소유자는 다시보기를 지울 수 있다(녹화 파일도 함께 지워진다).
+  await streamer.goto(`/recordings/${recordingId}`);
+  streamer.once('dialog', (d) => void d.accept());
+  await streamer.getByTestId('delete-recording').click();
+  await streamer.waitForURL(/\/recordings$/);
+  expect((await request.get(`/api/recordings/${recordingId}`)).status()).toBe(404);
+  // 소유자가 아니면 삭제 버튼이 보이지 않는다(demo 다시보기).
+  await viewer.goto('/recordings/01930000-0000-7000-8000-00000000a001');
+  await expect(viewer.getByTestId('recording-video')).toBeVisible();
+  await expect(viewer.getByTestId('delete-recording')).toHaveCount(0);
 });

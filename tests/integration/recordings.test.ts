@@ -132,3 +132,70 @@ describe('녹화 용량 정책', () => {
     expect((await h.anon().get(`/api/recordings/${DEMO_RECORDING_ID}`)).status).toBe(200);
   });
 });
+
+describe('다시보기 삭제', () => {
+  async function readyRecording(owner: Actor) {
+    const broadcastId = await endedWithRecording(owner, '지울 다시보기');
+    await processRecording(broadcastId);
+    const rec = await recordingOf(owner, broadcastId);
+    expect(rec.status).toBe('READY');
+    return { broadcastId, recordingId: rec.id as string };
+  }
+
+  it('방송 소유자는 다시보기를 지운다. 저장소 객체도 지워지고 목록·상세·방송 화면에서 사라진다', async () => {
+    const owner = await h.as('streamer1');
+    const { broadcastId, recordingId } = await readyRecording(owner);
+
+    expect((await owner.del(`/api/recordings/${recordingId}`)).status).toBe(204);
+
+    expect(h.storage.deleted).toEqual([`recordings/${broadcastId}.mp4`]);
+    expect(await listedBroadcastIds()).not.toContain(broadcastId);
+    expect((await h.anon().get(`/api/recordings/${recordingId}`)).status).toBe(404);
+    expect(await recordingOf(owner, broadcastId)).toBeNull();
+    // 방송 자체는 남는다.
+    expect((await h.anon().get(`/api/broadcasts/${broadcastId}`)).body.broadcast.status).toBe('ENDED');
+  });
+
+  it('다른 사용자는 403, 비로그인은 401', async () => {
+    const owner = await h.as('streamer1');
+    const other = await h.as('streamer2');
+    const { recordingId } = await readyRecording(owner);
+    const res = await other.del(`/api/recordings/${recordingId}`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('RECORDING_NOT_OWNER');
+    expect((await h.anon().del(`/api/recordings/${recordingId}`)).status).toBe(401);
+    expect(h.storage.deleted).toEqual([]);
+    expect((await h.anon().get(`/api/recordings/${recordingId}`)).status).toBe(200);
+  });
+
+  it('demo 다시보기는 아무도 지울 수 없다', async () => {
+    const someone = await h.as('streamer1');
+    expect((await someone.del(`/api/recordings/${DEMO_RECORDING_ID}`)).status).toBe(403);
+  });
+
+  it('녹화·처리 중인 다시보기는 지울 수 없다', async () => {
+    const owner = await h.as('streamer1');
+    const broadcastId = await endedWithRecording(owner);
+    const rec = await recordingOf(owner, broadcastId);
+    const res = await owner.del(`/api/recordings/${rec.id}`);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('RECORDING_IN_PROGRESS');
+  });
+
+  it('처리에 실패한 녹화도 지울 수 있다(저장소에는 지울 객체가 없다)', async () => {
+    const owner = await h.as('streamer1');
+    const broadcastId = await endedWithRecording(owner);
+    h.storage.failMerges = 3;
+    for (const attempt of [1, 2, 3]) await expect(processRecording(broadcastId, attempt)).rejects.toThrow('ffmpeg failed');
+    const rec = await recordingOf(owner, broadcastId);
+    expect(rec.status).toBe('FAILED');
+    expect((await owner.del(`/api/recordings/${rec.id}`)).status).toBe(204);
+    expect(await recordingOf(owner, broadcastId)).toBeNull();
+    expect(h.storage.deleted).toEqual([]);
+  });
+
+  it('없는 다시보기는 404', async () => {
+    const owner = await h.as('streamer1');
+    expect((await owner.del('/api/recordings/01930000-0000-7000-8000-0000000000ff')).status).toBe(404);
+  });
+});
