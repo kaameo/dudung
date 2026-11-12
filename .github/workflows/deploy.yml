@@ -4,6 +4,8 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # 문서만 바뀐 푸시로 운영 서버(방송 중일 수 있다)를 재시작하지 않는다.
+    paths-ignore: ['**/*.md', 'docs/**', 'plan.html']
   workflow_dispatch:
 
 concurrency:

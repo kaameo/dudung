@@ -1,4 +1,4 @@
-# 운영: DuckDNS 도메인 하나. Let's Encrypt 인증서를 자동으로 받는다.
+# 운영: 도메인 하나(dudung.kaameo.org). Let's Encrypt 인증서를 자동으로 받는다.
 {$DOMAIN} {
 	# 내부 훅 경로는 외부 요청에 404.
 	@internal path /internal/*

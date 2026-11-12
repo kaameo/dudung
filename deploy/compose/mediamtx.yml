@@ -30,7 +30,7 @@ webrtcTrustedProxies: [127.0.0.1]
 webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: :8189
 webrtcIPsFromInterfaces: yes
-# Oracle 은 사설 IP 에 공인 IP 가 1:1 NAT 로 붙어 있어서 공인 IP 를 추가로 알린다(MTX_WEBRTCADDITIONALHOSTS).
+# 클라우드 서버는 사설 IP 에 공인 IP 가 1:1 NAT 로 붙어 있어서(EC2 Elastic IP) 공인 IP 를 추가로 알린다(MTX_WEBRTCADDITIONALHOSTS).
 webrtcAdditionalHosts: []
 
 pathDefaults:

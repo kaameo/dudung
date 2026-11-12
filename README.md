@@ -4,7 +4,7 @@ PC 화면공유와 휴대폰 카메라로 **브라우저만으로** 송출하고
 
 | 항목 | 내용 |
 | --- | --- |
-| **서비스 주소** | https://dudung.duckdns.org _(배포 후 확정 — 아래 「운영 배포」 참고)_ |
+| **서비스 주소** | **https://dudung.kaameo.org** |
 | **시연 영상** | _(촬영 후 링크 추가: PC 송출·모바일 송출·시청·종료·권한·선택 기능)_ |
 | **테스트 로그인** | 로그인 화면의 **「테스트 계정으로 바로 로그인」** 버튼 (회원가입 불필요) |
 
@@ -80,9 +80,39 @@ PC 화면공유와 휴대폰 카메라로 **브라우저만으로** 송출하고
 
 ```bash
 # 필요: bash, curl, jq
-BASE_URL=https://dudung.duckdns.org scripts/authz-check.sh
+BASE_URL=https://dudung.kaameo.org scripts/authz-check.sh
 ```
 각 칸을 비로그인·다른 사용자(`streamer2`)·소유자(`streamer1`)로 요청해 기대 코드와 비교하고 ✅/❌ 로 출력합니다. 스크립트가 만든 방송은 끝에 지웁니다. 같은 표가 통합 테스트(`tests/integration/authz-matrix.test.ts`)의 케이스 목록입니다.
+
+- 「녹화 삭제」는 실제 녹화를 curl 로 만들 수 없어서 demo 녹화(아무도 소유하지 않음)로 거절만 확인합니다. 소유자가 지울 수 있는지는 통합 테스트와 E2E 가 확인합니다.
+- 「MediaMTX 송출(WHIP)」의 `allow` 는 인증을 통과해 SDP 검사 단계로 넘어갔다는 뜻입니다(스크립트는 가짜 SDP 를 보냅니다).
+
+운영 서버에서 실행한 결과 (2026-11-12 17:36 KST):
+```
+기능                       비로그인   다른 사용자 소유자·작성자
+------------------------------------------------------------------------------
+방송 목록                ✅ 200        ✅ 200        ✅ 200        
+채널 페이지             ✅ 200        ✅ 200        ✅ 200        
+방송 등록                ✅ 401        ✅ 201        ✅ 201        
+내 방송 목록            ✅ 401        ✅ 200        ✅ 200        
+방송 시작                ✅ 401        ✅ 403        ✅ 200        
+방송 상세·시청 정보 ✅ 200        ✅ 200        ✅ 200        
+방송 수정                ✅ 401        ✅ 403        ✅ 200        
+송출 토큰 재발급      ✅ 401        ✅ 403        ✅ 200        
+MediaMTX 송출(WHIP)        ✅ 401        ✅ 401        ✅ allow      
+댓글 조회                ✅ 200        ✅ 200        ✅ 200        
+댓글 작성                ✅ 401        ✅ 201        ✅ 201        
+댓글 수정                ✅ 401        ✅ 403        ✅ 200        
+후원 요청                ✅ 401        ✅ 201        ✅ 403        
+후원 내역·합계        ✅ 200        ✅ 200        ✅ 200        
+녹화 목록                ✅ 200        ✅ 200        ✅ 200        
+녹화 삭제(남의 녹화) ✅ 401        ✅ 403        ✅ 403        
+방송 종료                ✅ 401        ✅ 403        ✅ 200        
+댓글 삭제                ✅ 401        ✅ 403        ✅ 204        
+방송 삭제                ✅ 401        ✅ 403        ✅ 204        
+
+모든 칸이 기대한 결과와 같습니다.
+```
 
 ## 4. 지원 환경
 
@@ -135,9 +165,21 @@ pnpm test:e2e    # 브라우저 E2E: 위 로컬 스택을 띄운 뒤 실행 (Goo
 | `TOSS_CLIENT_KEY`, `TOSS_SECRET_KEY` | 토스페이먼츠 결제위젯 **테스트** 키 (`test_gck_…`, `test_gsk_…`) |
 | `TEST_LOGIN_ENABLED` | 고정 계정 원클릭 로그인 |
 
-### 운영 배포 (Oracle Cloud Always Free ARM, 월 0원)
-1. 사람이 할 일: DuckDNS 서브도메인 → 서버 공인 IP, Oracle VCN 보안 목록과 서버 iptables 에서 **80, 443, 8189(UDP·TCP)** 열기, R2 버킷·API 토큰, 토스 테스트 키, GitHub Secrets(`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`)와 변수 `DEPLOY_ENABLED=true`.
-2. 서버의 `~/dudung/.env` 에 `.env.example` 값을 채웁니다(실제 비밀값은 서버와 GitHub Secrets 에만).
+### 운영 배포 (AWS EC2 서울, t4g.medium)
+현재 운영 환경은 다음과 같습니다.
+
+| 항목 | 내용 |
+| --- | --- |
+| 서버 | AWS EC2 `t4g.medium`(ARM Graviton, 2 vCPU / 4GB), Ubuntu 24.04, 서울(ap-northeast-2) |
+| 주소 | Elastic IP + Route 53 `dudung.kaameo.org`(A 레코드), Caddy 가 Let's Encrypt 인증서 자동 발급 |
+| 방화벽 | 보안 그룹에서 22, 80, 443/tcp, 8189/tcp·udp 만 연다. DB·Redis·MediaMTX API·앱은 127.0.0.1 에만 바인딩 |
+| 저장소 | Cloudflare R2 (녹화 `recordings/`, DB 백업 `backups/`) |
+| 결제 | 토스페이먼츠 결제위젯 테스트 키 |
+
+> 설계 문서(`plan.html`)는 Oracle Cloud Always Free A1(월 0원)을 기준으로 했지만, 오사카 리전 A1 재고 부족("Out of host capacity")이 계속되어 같은 ARM64 이미지를 그대로 쓸 수 있는 AWS Graviton 으로 옮겼습니다. 구성(Docker Compose, Caddy, MediaMTX, 포트)은 동일합니다.
+
+1. 준비: 도메인 A 레코드 → 서버 공인 IP, 보안 그룹(또는 클라우드 방화벽과 서버 iptables)에서 **80, 443, 8189(UDP·TCP)** 열기, R2 버킷·API 토큰, 토스 테스트 키, GitHub Secrets(`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`)와 변수 `DEPLOY_ENABLED=true`.
+2. 서버의 `~/dudung/.env` 에 `.env.example` 값을 채웁니다(실제 비밀값은 서버와 GitHub Secrets 에만). `MEDIAMTX_PUBLIC_IP` 에는 서버 공인 IP 를 넣습니다.
 3. `main` 에 머지하면 GitHub Actions 가 ARM64 이미지를 빌드해 GHCR 에 올리고, SSH 로 `docker compose pull && up -d` 합니다. 마이그레이션과 seed 는 one-shot `migrate` 컨테이너가 앱보다 먼저 실행합니다.
 4. 외부 업타임 모니터로 `https://<도메인>/readyz` 를 1분마다 확인합니다(DB·Redis·MediaMTX 까지 검사). DB 는 매일 `pg_dump` 를 R2 `backups/` 에 올리고 7일 보관합니다.
 

@@ -1,4 +1,4 @@
-# 운영: Oracle Cloud Always Free ARM 1 OCPU / 8GB 서버 한 대.
+# 운영: ARM64 서버 한 대(현재 AWS EC2 t4g.medium, 서울).
 # 사용법: 이 디렉터리에 .env 를 두고 `docker compose pull && docker compose up -d`.
 name: dudung
 
